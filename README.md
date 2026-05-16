@@ -1,19 +1,23 @@
-# Supply Chain Sales Prediction — MLOps Pipeline
+# 📦 Supply Chain Sales Prediction — MLOps Pipeline
 
-An end-to-end ML system for predicting supply chain sales values, with automated training, real-time inference, SHAP explainability, and CI/CD deployment.
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://supply-chain-analytics-capstone-h4rlfx53hsdwa4uyybnjwz.streamlit.app/)
+
+An end-to-end ML system for predicting supply chain sales values, with automated training, real-time inference, SHAP explainability, and Streamlit deployment.
+
+🔗 **Live Demo:** https://supply-chain-analytics-capstone-h4rlfx53hsdwa4uyybnjwz.streamlit.app
 
 ---
 
-##  Problem Statement
+## 🎯 Problem Statement
 
 Build an intelligent supply chain analytics system that forecasts demand, identifies bottleneck risks, optimizes inventory allocation, and supports real-time decision-making — trained on global supply chain datasets exceeding 100K records.
 
 ---
 
-##  End-to-End Flow
+## 🔁 End-to-End Flow
 
 ```
-Raw Data → Preprocessing → Feature Alignment → Encoding → XGBoost Model → Prediction → SHAP → API Response
+Raw Data → Preprocessing → Feature Alignment → Encoding → XGBoost Model → Prediction → Streamlit UI
 ```
 
 ### 1. Raw Input
@@ -30,7 +34,7 @@ Example input fields: `Type`, `Days for shipping (real)`, `Product Price`, `Cust
 ### 3. Feature Alignment & Encoding
 ```python
 df = df.reindex(columns=columns, fill_value=0)
-X_transformed = preprocessor.transform(df_single)  # OneHotEncoder + Numerical
+X_transformed = preprocessor.transform(df_single)
 ```
 
 ### 4. Model — XGBoost Regressor
@@ -40,16 +44,13 @@ prediction = np.expm1(pred_log)  # Reverse log transform
 ```
 Best result: **R² = 0.967 | RMSE = 20.87**
 
-### 5. SHAP Explainability
-Per-prediction feature attribution, e.g.:
-- `Sales Per Customer` → +0.72
-- `Department: Fitness` → −0.04
-- `Category: Sporting Goods` → −0.009
+### 5. Streamlit Frontend
+- 📊 EDA tab: metrics, bar charts, pie charts from real data
+- 🔮 Predict tab: user inputs → live XGBoost prediction
 
 ---
 
-##  CI/CD Pipeline
-
+## 🏗️ CI/CD Pipeline
 ```
 Code Push / Schedule
     → GitHub Actions
@@ -58,6 +59,7 @@ Code Push / Schedule
         → Update artifacts/
         → Auto Deploy (Railway / Render)
             → FastAPI Response
+               →Streamlit Cloud
 ```
 
 ---
@@ -127,7 +129,9 @@ evoastra-supply-chain-capstone/
 
 ---
 
-##  Model Results
+---
+
+## 📈 Model Results
 
 | Phase | Model | R² | RMSE |
 |-------|-------|----|------|
@@ -137,43 +141,43 @@ evoastra-supply-chain-capstone/
 
 ---
 
-##  Tech Stack
+## 🔧 Tech Stack
 
 | Area | Tools |
 |------|-------|
-| Analytics | Python, Pandas, Matplotlib, Seaborn, Power BI |
+| Analytics | Python, Pandas, Matplotlib, Seaborn, Plotly |
 | ML / AI | XGBoost, Scikit-learn, SHAP, Optuna |
-| Forecasting | ARIMA, SARIMA, Prophet |
-| Deployment | FastAPI, Docker, MLflow |
-| CI/CD & Monitoring | GitHub Actions, Evidently AI, Grafana |
+| Frontend | Streamlit |
+| Backend | FastAPI, Docker |
+| CI/CD | GitHub Actions |
 
 ---
 
-##  Getting Started
+## 🚀 Run Locally
 
 ```bash
-git clone https://github.com/your-org/evoastra-supply-chain-capstone.git
-cd evoastra-supply-chain-capstone
+git clone https://github.com/Aharshi3614/supply-chain-analytics-capstone.git
+cd supply-chain-analytics-capstone
 pip install -r requirements.txt
-jupyter notebook
+streamlit run app.py
 ```
 
 ---
 
-##  System Capabilities
+## 🎯 System Capabilities
 
-- Automated ML training & retraining via CI/CD
-- Real-time REST API prediction (FastAPI)
-- Explainable AI with SHAP force plots
-- Production-ready Docker deployment
-- Model drift monitoring with Evidently AI
+- ✅ Live Streamlit dashboard with EDA + Prediction
+- ✅ XGBoost model with R² = 0.967
+- ✅ Deployed on Streamlit Cloud (free, public URL)
+- ✅ FastAPI backend with Docker support
+- ✅ CI/CD via GitHub Actions
+
+---
+
+## Architecture Diagram
+
+![architecture_diagram](https://github.com/user-attachments/assets/b81d9861-afac-45c7-bad2-485040a888fa)
 
 ---
 
 © 2026 Evoastra Ventures (OPC) Pvt Ltd. All rights reserved.
-
-## Architecture Diagram
-![architecture_diagram](https://github.com/user-attachments/assets/b81d9861-afac-45c7-bad2-485040a888fa)
-
-
-
