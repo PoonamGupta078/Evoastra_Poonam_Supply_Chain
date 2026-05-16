@@ -1,56 +1,11 @@
--Requirements
--Supply Chain Analytics & Sales Prediction System
--Evoastra Ventures (OPC) Pvt Ltd  Team C  March 2026
-
-# Core Data Processing
-numpy>=1.24.0
-pandas>=2.0.0
-scipy>=1.11.0
-
-# Visualization
-matplotlib>=3.7.0
-seaborn>=0.12.0
-plotly>=5.15.0
-
-# Machine Learning
-scikit-learn>=1.3.0
-xgboost>=1.7.0
-lightgbm>=4.0.0
-
-# Statistical Modeling & Time Series
-statsmodels>=0.14.0
-prophet>=1.1.4
-pmdarima>=2.0.3
-
-Hyperparameter Tuning
-optuna>=3.3.0
-
-Explainability
-shap>=0.42.0
-
-Deep Learning
-tensorflow>=2.13.0
-
-API Deployment
-fastapi>=0.103.0
-uvicorn>=0.23.0
-pydantic>=2.0.0
-
-MLOps & Model Registry
-mlflow>=2.7.0
-
-Model Monitoring
-evidently>=0.4.0
-
-Serialization
-joblib>=1.3.0
-
-Notebook Environment
-jupyter>=1.0.0
-ipykernel>=6.25.0
-
-Utilities
-python-dotenv>=1.0.0
-pyyaml>=6.0.1
-requests>=2.31.0
-tqdm>=4.66.0
+streamlit
+pandas
+numpy
+plotly
+scikit-learn
+xgboost
+shap
+joblib
+requests
+fastapi
+uvicorn
