@@ -48,18 +48,16 @@ with tab2:
         order_quantity = st.number_input("Order Quantity", min_value=1, max_value=100, value=5)
         department = st.selectbox("Department", ["Fitness", "Outdoors", "Apparel", "Electronics", "Golf", "Fan Shop"])
 
-    if st.button("🚀 Predict", use_container_width=True):
+if st.button("🚀 Predict", use_container_width=True):
         try:
-            sample = pd.DataFrame([{
-                "type": order_type.lower(),
-                "days_for_shipping_(real)": days_shipping_real,
-                "days_for_shipment_(scheduled)": days_shipping_scheduled,
-                "product_price": product_price,
-                "customer_segment": customer_segment.lower(),
-                "order_item_quantity": float(order_quantity),
-                "department_name": department.lower()
-            }])
-            sample = sample.reindex(columns=columns, fill_value=0)
+            sample = pd.DataFrame([{col: 0 for col in columns}])
+            sample["type"] = order_type.lower()
+            sample["days_for_shipping_(real)"] = float(days_shipping_real)
+            sample["days_for_shipment_(scheduled)"] = float(days_shipping_scheduled)
+            sample["product_price"] = float(product_price)
+            sample["customer_segment"] = customer_segment.lower()
+            sample["order_item_quantity"] = float(order_quantity)
+            sample["department_name"] = department.lower()
             pred_log = model.predict(sample)[0]
             prediction = float(np.expm1(pred_log))
             st.success(f"💰 Predicted Sales: **${prediction:.2f}**")
