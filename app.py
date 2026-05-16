@@ -50,7 +50,7 @@ with tab2:
 
 if st.button("🚀 Predict", use_container_width=True):
         try:
-            sample = pd.DataFrame([{col: np.nan for col in columns}])
+            sample = pd.DataFrame([{col: 0 for col in columns}])
             sample["type"] = order_type.lower()
             sample["days_for_shipping_(real)"] = float(days_shipping_real)
             sample["days_for_shipment_(scheduled)"] = float(days_shipping_scheduled)
@@ -58,12 +58,11 @@ if st.button("🚀 Predict", use_container_width=True):
             sample["customer_segment"] = customer_segment.lower()
             sample["order_item_quantity"] = float(order_quantity)
             sample["department_name"] = department.lower()
-            # fill numeric nulls with 0
-            num_cols = sample.select_dtypes(include=[np.number]).columns
-            sample[num_cols] = sample[num_cols].fillna(0)
-            # fill string nulls with empty string
-            obj_cols = sample.select_dtypes(include=['object']).columns
-            sample[obj_cols] = sample[obj_cols].fillna("")
+            for col in sample.select_dtypes(include=['object']).columns:
+                sample[col] = sample[col].astype(str)
+            for col in sample.select_dtypes(exclude=['object']).columns:
+                sample[col] = pd.to_numeric(sample[col], errors='coerce').fillna(0).astype(float)
+            st.write(sample.dtypes)
             pred_log = model.predict(sample)[0]
             prediction = float(np.expm1(pred_log))
             st.success(f"💰 Predicted Sales: **${prediction:.2f}**")
