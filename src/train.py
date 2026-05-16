@@ -8,8 +8,7 @@ from xgboost import XGBRegressor
 from preprocess import preprocess
 
 # Load data
-df = pd.read_csv("DataCoSupplyChain.csv", encoding="latin1")
-
+df = pd.read_csv("data/supplychain_cleaned.csv", encoding="latin1")
 # Preprocess
 df = preprocess(df)
 

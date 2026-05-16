@@ -3,8 +3,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import shap
-from preprocess import preprocess
-
+from src.preprocess import preprocess
 app = FastAPI()
 
 # Load artifacts
@@ -29,7 +28,7 @@ def predict():
     # -------------------------
     # LOAD DATA (same as predict.py)
     # -------------------------
-    df = pd.read_csv("DataCoSupplyChain.csv", encoding="latin1")
+    df = pd.read_csv("data/supplychain_cleaned.csv", encoding="latin1")
 
     # -------------------------
     # PREPROCESS
