@@ -50,7 +50,9 @@ with tab2:
 
 if st.button("🚀 Predict", use_container_width=True):
         try:
-            sample = pd.DataFrame([{col: 0 for col in columns}])
+            from src.preprocess import preprocess
+            df_raw = pd.read_csv("data/supplychain_cleaned.csv", encoding="latin1")
+            sample = df_raw.iloc[[0]].copy()
             sample["type"] = order_type.lower()
             sample["days_for_shipping_(real)"] = float(days_shipping_real)
             sample["days_for_shipment_(scheduled)"] = float(days_shipping_scheduled)
@@ -58,11 +60,7 @@ if st.button("🚀 Predict", use_container_width=True):
             sample["customer_segment"] = customer_segment.lower()
             sample["order_item_quantity"] = float(order_quantity)
             sample["department_name"] = department.lower()
-            for col in sample.select_dtypes(include=['object']).columns:
-                sample[col] = sample[col].astype(str)
-            for col in sample.select_dtypes(exclude=['object']).columns:
-                sample[col] = pd.to_numeric(sample[col], errors='coerce').fillna(0).astype(float)
-            st.write(sample.dtypes)
+            sample = sample.reindex(columns=columns, fill_value=0)
             pred_log = model.predict(sample)[0]
             prediction = float(np.expm1(pred_log))
             st.success(f"💰 Predicted Sales: **${prediction:.2f}**")
