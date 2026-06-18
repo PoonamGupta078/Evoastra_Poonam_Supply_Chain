@@ -256,7 +256,26 @@ def predict_dataframe(df, model, columns):
         Predictions in real dollar values (not log-scale).
     """
     df = preprocess(df)
-    df = df.reindex(columns=columns, fill_value=0)
+    
+    # Intelligently fill missing columns based on their expected type
+    preprocessor = model.named_steps["preprocessor"]
+    
+    cat_cols = []
+    for name, transformer, cols_list in preprocessor.transformers_:
+        if name == "cat":
+            cat_cols = cols_list
+            
+    # Add missing columns with appropriate defaults
+    for col in columns:
+        if col not in df.columns:
+            if col in cat_cols:
+                df[col] = "Unknown"
+            else:
+                df[col] = 0.0
+                
+    # Force alignment and correct order
+    df = df[columns]
+    
     preds_log = model.predict(df)
     preds = np.expm1(preds_log)
     return preds
