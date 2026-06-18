@@ -1,23 +1,28 @@
 """
-Shared preprocessing function used by train.py, predict.py, and all
-serving endpoints (Streamlit + FastAPI).
+Shared preprocessing function used by train.py, train_classifier.py,
+and all serving endpoints (Streamlit + FastAPI).
 
 Design principle: ONE code path for training AND inference — eliminates
 train/serve skew.
 
+Key leakage-prevention parameters:
+  extra_drop_cols — allows each model to exclude its own leaky features:
+    • SALES_EXTRA_LEAKY      → removes product_price, order_item_quantity, profit_log
+    • CLASSIFIER_EXTRA_DROP  → removes post-delivery observations
+
 Fixes applied vs. original:
-  1. Date parsing now handles actual column names in cleaned CSV
+  1. Date parsing handles both raw CSV and cleaned CSV column names
   2. Leaky financial columns removed (order_item_total, etc.)
   3. High-cardinality categoricals frequency-encoded (not one-hot)
   4. Profit no longer clipped to >= 0 (negative profit is real signal)
   5. Raw date columns dropped after feature extraction
+  6. extra_drop_cols parameter for per-model leakage control
 """
 
 import pandas as pd
 import numpy as np
 import warnings
 
-# Import config — single source of truth for column lists
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -29,25 +34,25 @@ from config import (
 )
 
 
-def preprocess(df, is_training=False):
+def preprocess(df, is_training=False, extra_drop_cols=None):
     """
     Clean and feature-engineer a supply chain DataFrame.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Raw or semi-cleaned DataFrame (either the original
-        DataCoSupplyChain.csv or the already-cleaned CSV).
+        Raw or semi-cleaned DataFrame.
     is_training : bool
-        If True, runs a leakage correlation check and raises
-        a warning if any feature correlates > threshold with
-        the target.
+        If True, runs leakage correlation check.
+    extra_drop_cols : list[str] or None
+        Additional columns to drop AFTER base processing.
+        Use SALES_EXTRA_LEAKY for the regression model.
+        Use CLASSIFIER_EXTRA_DROP for the delivery classifier.
 
     Returns
     -------
     pd.DataFrame
-        Cleaned, feature-engineered DataFrame ready for model
-        training or inference.
+        Feature-engineered DataFrame ready for training or inference.
     """
     df = df.copy()
 
@@ -58,42 +63,31 @@ def preprocess(df, is_training=False):
 
     # -----------------------------------------------------------------
     # 2. PARSE DATE COLUMNS
-    #    FIX: The original code checked for 'shipping_date_(dateorders)'
-    #    which only exists in the raw CSV.  The cleaned CSV has
-    #    'order_date' and 'shipping_date' directly.  We now handle
-    #    both cases.
+    #    Handles both raw CSV ('order_date_(dateorders)') and
+    #    cleaned CSV ('order_date') column names.
     # -----------------------------------------------------------------
     order_date_col = None
     for candidate in ["order_date_(dateorders)", "order_date"]:
         if candidate in df.columns:
-            df["_order_date_parsed"] = pd.to_datetime(
-                df[candidate], errors="coerce"
-            )
+            df["_order_date_parsed"] = pd.to_datetime(df[candidate], errors="coerce")
             order_date_col = "_order_date_parsed"
             break
 
-    shipping_date_col = None
     for candidate in ["shipping_date_(dateorders)", "shipping_date"]:
         if candidate in df.columns:
-            df["_shipping_date_parsed"] = pd.to_datetime(
-                df[candidate], errors="coerce"
-            )
-            shipping_date_col = "_shipping_date_parsed"
+            df["_shipping_date_parsed"] = pd.to_datetime(df[candidate], errors="coerce")
             break
 
-    # Validate: warn if > 5% of dates failed to parse
     if order_date_col is not None:
         null_pct = df[order_date_col].isna().mean()
         if null_pct > 0.05:
             warnings.warn(
-                f"Date parsing: {null_pct:.1%} of order_date values are null "
-                f"after parsing. Check the date format."
+                f"Date parsing: {null_pct:.1%} of order_date values are null. "
+                f"Check the date format."
             )
 
     # -----------------------------------------------------------------
-    # 3. EXTRACT TEMPORAL FEATURES (from order_date, not shipping_date)
-    #    FIX: Original derived these from shipping_date which was NaT,
-    #    resulting in all zeros.
+    # 3. EXTRACT TEMPORAL FEATURES (from order_date)
     # -----------------------------------------------------------------
     if order_date_col is not None:
         df["order_month"] = df[order_date_col].dt.month.fillna(0).astype(int)
@@ -107,7 +101,6 @@ def preprocess(df, is_training=False):
         )
         df["is_weekend"] = df[order_date_col].dt.weekday.fillna(0).astype(int) >= 5
     else:
-        # Fallback — if pre-computed features already exist, keep them
         for col, default in [
             ("order_month", 0),
             ("order_day", 0),
@@ -117,21 +110,18 @@ def preprocess(df, is_training=False):
             if col not in df.columns:
                 df[col] = default
 
-    # Clean up temporary parsed columns
     for tmp_col in ["_order_date_parsed", "_shipping_date_parsed"]:
         if tmp_col in df.columns:
             df.drop(columns=[tmp_col], inplace=True)
 
     # -----------------------------------------------------------------
-    # 4. HANDLE SALES SAFELY (needed for log transform)
+    # 4. HANDLE SALES (needed for log transform)
     # -----------------------------------------------------------------
     if "sales" not in df.columns:
         df["sales"] = 0
 
     # -----------------------------------------------------------------
     # 5. HANDLE PROFIT
-    #    FIX: Removed .clip(lower=0) — negative profit is real business
-    #    signal (loss-making orders).  Clipping destroyed that info.
     # -----------------------------------------------------------------
     if "order_profit_per_order" in df.columns:
         df["profit"] = df["order_profit_per_order"]
@@ -141,13 +131,14 @@ def preprocess(df, is_training=False):
     # -----------------------------------------------------------------
     # 6. FEATURE ENGINEERING
     # -----------------------------------------------------------------
-    # Delivery days
+    # Delivery days (engineered from actual shipping days)
     if "days_for_shipping_(real)" in df.columns:
         df["delivery_days"] = df["days_for_shipping_(real)"]
     elif "delivery_days" not in df.columns:
         df["delivery_days"] = 0
 
-    # Delay flag (from delivery_status, not from dates)
+    # Delay flag — binary target for the classifier
+    # (1 = Late delivery, 0 = On time / Advance shipping)
     if "delivery_status" in df.columns:
         df["delay_flag"] = (
             df["delivery_status"].str.lower() == "late delivery"
@@ -157,8 +148,6 @@ def preprocess(df, is_training=False):
 
     # -----------------------------------------------------------------
     # 7. SAFE LOG TRANSFORM
-    #    Using log1p to handle zeros.  For profit, we use the absolute
-    #    value with a sign indicator to preserve negative profits.
     # -----------------------------------------------------------------
     df["sales"] = pd.to_numeric(df["sales"], errors="coerce").fillna(0).clip(lower=0)
     df["sales_log"] = np.log1p(df["sales"])
@@ -169,10 +158,6 @@ def preprocess(df, is_training=False):
 
     # -----------------------------------------------------------------
     # 8. FREQUENCY-ENCODE HIGH-CARDINALITY COLUMNS
-    #    FIX: product_name, customer_city, etc. have thousands of
-    #    unique values.  One-hot encoding them creates 28K+ columns.
-    #    Frequency encoding replaces each value with its count in the
-    #    dataset — captures popularity/commonness as a single number.
     # -----------------------------------------------------------------
     for col in HIGH_CARDINALITY_COLUMNS:
         if col in df.columns:
@@ -181,16 +166,25 @@ def preprocess(df, is_training=False):
             df.drop(columns=[col], inplace=True)
 
     # -----------------------------------------------------------------
-    # 9. DROP LEAKY COLUMNS
-    #    FIX: Original only dropped 'sales' and 'profit'.  Left
-    #    order_item_total (r=0.99 with target), order_item_discount,
-    #    order_profit_per_order, etc. — all derived from sales.
+    # 9. DROP BASE LEAKY COLUMNS (financial derivations of sales)
     # -----------------------------------------------------------------
     all_drop = list(set(DROP_COLUMNS + LEAKY_COLUMNS))
     df.drop(columns=[c for c in all_drop if c in df.columns], inplace=True)
 
     # -----------------------------------------------------------------
-    # 10. FORCE TYPE CONSISTENCY
+    # 10. DROP MODEL-SPECIFIC LEAKY COLUMNS
+    #     extra_drop_cols lets each model specify its own leaky features.
+    #     • Sales model:      SALES_EXTRA_LEAKY (removes price × qty formula)
+    #     • Classifier model: CLASSIFIER_EXTRA_DROP (removes post-delivery info)
+    # -----------------------------------------------------------------
+    if extra_drop_cols:
+        df.drop(
+            columns=[c for c in extra_drop_cols if c in df.columns],
+            inplace=True,
+        )
+
+    # -----------------------------------------------------------------
+    # 11. FORCE TYPE CONSISTENCY
     # -----------------------------------------------------------------
     num_cols = df.select_dtypes(include=["int64", "float64", "int32", "float32"]).columns
     for col in num_cols:
@@ -201,9 +195,7 @@ def preprocess(df, is_training=False):
         df[col] = df[col].astype(str)
 
     # -----------------------------------------------------------------
-    # 11. LEAKAGE DETECTION (training only)
-    #     Automatically check if any remaining numeric feature
-    #     correlates > threshold with the target.
+    # 12. LEAKAGE DETECTION (training only)
     # -----------------------------------------------------------------
     if is_training and "sales_log" in df.columns:
         _assert_no_leakage(df, "sales_log")
@@ -212,11 +204,7 @@ def preprocess(df, is_training=False):
 
 
 def _assert_no_leakage(df, target_col):
-    """
-    Check if any numeric feature has dangerously high correlation
-    with the target.  Raises a warning (not an error) so training
-    can proceed but the issue is visible.
-    """
+    """Warn if any numeric feature correlates > threshold with target."""
     numeric_df = df.select_dtypes(include=["int64", "float64"])
     if target_col not in numeric_df.columns:
         return
@@ -227,55 +215,107 @@ def _assert_no_leakage(df, target_col):
     if len(high_corr) > 0:
         warnings.warn(
             f"\n⚠️  POTENTIAL LEAKAGE DETECTED!\n"
-            f"The following features have |correlation| > "
-            f"{LEAKAGE_CORRELATION_THRESHOLD} with '{target_col}':\n"
-            f"{high_corr.to_string()}\n"
-            f"Consider removing these features.\n",
+            f"Features with |correlation| > {LEAKAGE_CORRELATION_THRESHOLD} "
+            f"with '{target_col}':\n"
+            f"{high_corr.to_string()}\n",
             UserWarning,
             stacklevel=2,
         )
 
 
+def _get_pipeline_cat_cols(model):
+    """Return categorical input columns from a fitted sklearn pipeline preprocessor."""
+    if not hasattr(model, "named_steps"):
+        return []
+
+    preprocessor = model.named_steps.get("preprocessor")
+    if preprocessor is None or not hasattr(preprocessor, "transformers_"):
+        return []
+
+    cat_cols = []
+    for name, transformer, cols_list in preprocessor.transformers_:
+        if name == "cat":
+            cat_cols = list(cols_list)
+            break
+    return cat_cols
+
+
+# =========================================================================
+# INFERENCE HELPERS
+# =========================================================================
+
 def predict_dataframe(df, model, columns):
     """
-    Shared prediction function — used by both Streamlit and FastAPI
-    to guarantee identical preprocessing during inference.
+    Sales regression inference.
+
+    Preprocesses input, fills missing features intelligently, and returns
+    predicted sales in real dollars (inverse log transform applied).
 
     Parameters
     ----------
     df : pd.DataFrame
-        Raw input DataFrame (can be a single row or batch).
-    model : sklearn.pipeline.Pipeline
-        The loaded model pipeline.
+        Raw user input (single row or batch).
+    model : sklearn Pipeline
+        Fitted sales regression pipeline.
     columns : list[str]
-        The exact column list/order from training.
+        Exact training feature column order.
 
     Returns
     -------
-    np.ndarray
-        Predictions in real dollar values (not log-scale).
+    np.ndarray  — predicted sales in dollars
     """
-    df = preprocess(df)
-    
-    # Intelligently fill missing columns based on their expected type
-    preprocessor = model.named_steps["preprocessor"]
-    
-    cat_cols = []
-    for name, transformer, cols_list in preprocessor.transformers_:
-        if name == "cat":
-            cat_cols = cols_list
-            
-    # Add missing columns with appropriate defaults
+    from config import SALES_EXTRA_LEAKY
+
+    df = preprocess(df, extra_drop_cols=SALES_EXTRA_LEAKY)
+
+    cat_cols = _get_pipeline_cat_cols(model)
     for col in columns:
         if col not in df.columns:
-            if col in cat_cols:
-                df[col] = "Unknown"
-            else:
-                df[col] = 0.0
-                
-    # Force alignment and correct order
+            df[col] = "Unknown" if col in cat_cols else 0.0
+
     df = df[columns]
-    
+
     preds_log = model.predict(df)
-    preds = np.expm1(preds_log)
-    return preds
+    return np.expm1(preds_log)
+
+
+def predict_classifier(df, model, columns):
+    """
+    Late delivery risk classifier inference.
+
+    Preprocesses input with classifier-specific leakage removal,
+    and returns (binary_prediction, probability_of_late_delivery).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Raw user input at ORDER time (no post-delivery info needed).
+    model : sklearn Pipeline
+        Fitted delivery classifier pipeline.
+    columns : list[str]
+        Exact training feature column order for the classifier.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        (binary_predictions, late_delivery_probabilities)
+    """
+    from config import CLASSIFIER_EXTRA_DROP
+
+    df = preprocess(df, extra_drop_cols=CLASSIFIER_EXTRA_DROP)
+
+    cat_cols = _get_pipeline_cat_cols(model)
+    for col in columns:
+        if col not in df.columns:
+            df[col] = "Unknown" if col in cat_cols else 0.0
+
+    # Remove the target column if it accidentally ended up in df
+    # (delay_flag may be 0 as a placeholder from preprocessing)
+    if "delay_flag" in df.columns and "delay_flag" not in columns:
+        df = df.drop(columns=["delay_flag"])
+
+    df = df[columns]
+
+    preds = model.predict(df)
+    proba = model.predict_proba(df)[:, 1]   # probability of class 1 (Late)
+    return preds, proba

@@ -1,16 +1,14 @@
 """
-Model training script for Supply Chain Sales Prediction.
+Model training script for Supply Chain Sales Prediction (Regression).
+
+Leakage-free model: product_price and order_item_quantity are explicitly
+removed because sales = product_price × order_item_quantity (r = 1.0).
+profit_log is also removed as profit is derived from sales.
 
 Produces:
   - artifacts/model.pkl      — fitted sklearn Pipeline (preprocessor + XGBoost)
   - artifacts/columns.pkl    — exact feature column list/order
   - artifacts/metrics.json   — R², RMSE, MAE, training metadata
-
-Fixes vs. original:
-  1. Added random_state to train_test_split for reproducibility
-  2. Computes and saves R²/RMSE/MAE on held-out test set
-  3. Prints clear training summary
-  4. Uses centralized config for all parameters
 """
 
 import json
@@ -28,7 +26,6 @@ from sklearn.pipeline import Pipeline
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from xgboost import XGBRegressor
 
-# Add src to path so config is importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from preprocess import preprocess
 from config import (
@@ -42,6 +39,7 @@ from config import (
     RANDOM_STATE,
     CV_FOLDS,
     N_ITER,
+    SALES_EXTRA_LEAKY,
 )
 
 
@@ -49,43 +47,34 @@ def train():
     """Run the full training pipeline and save artifacts."""
     start_time = time.time()
 
-    # ------------------------------------------------------------------
-    # 1. LOAD & PREPROCESS
-    # ------------------------------------------------------------------
     print("=" * 60)
-    print("  Supply Chain Sales Prediction — Training")
+    print("  Supply Chain Sales Prediction — Training (Leakage-Free)")
     print("=" * 60)
+    print("\n  [INFO] Removed leaky features:")
+    for col in SALES_EXTRA_LEAKY:
+        print(f"     - {col}")
 
-    print(f"\n📂 Loading data from: {DATA_PATH}")
+    print(f"\n[*] Loading data from: {DATA_PATH}")
     df = pd.read_csv(DATA_PATH, encoding="latin1")
     print(f"   Raw shape: {df.shape}")
 
-    df = preprocess(df, is_training=True)
+    # Preprocess with SALES-specific leaky column removal
+    df = preprocess(df, is_training=True, extra_drop_cols=SALES_EXTRA_LEAKY)
     print(f"   After preprocessing: {df.shape}")
 
-    # ------------------------------------------------------------------
-    # 2. SPLIT FEATURES / TARGET
-    # ------------------------------------------------------------------
     if TARGET_COL not in df.columns:
         raise ValueError(f"Target column '{TARGET_COL}' not found after preprocessing.")
 
     X = df.drop(columns=[TARGET_COL])
     y = df[TARGET_COL]
 
-    print(f"\n🎯 Target: {TARGET_COL}")
+    print(f"\n[*] Target: {TARGET_COL}")
     print(f"   Features: {X.shape[1]} columns")
 
-    # ------------------------------------------------------------------
-    # 3. IDENTIFY COLUMN TYPES
-    # ------------------------------------------------------------------
     cat_cols = X.select_dtypes(include=["object"]).columns.tolist()
     num_cols = X.select_dtypes(exclude=["object"]).columns.tolist()
-
     print(f"   Categorical: {len(cat_cols)} | Numeric: {len(num_cols)}")
 
-    # ------------------------------------------------------------------
-    # 4. BUILD PIPELINE
-    # ------------------------------------------------------------------
     preprocessor = ColumnTransformer(
         [
             (
@@ -98,24 +87,14 @@ def train():
     )
 
     xgb = XGBRegressor(random_state=RANDOM_STATE, verbosity=0)
-
     pipeline = Pipeline([("preprocessor", preprocessor), ("model", xgb)])
 
-    # ------------------------------------------------------------------
-    # 5. TRAIN / TEST SPLIT — with fixed random_state for reproducibility
-    #    FIX: Original had no random_state, giving different results each run.
-    # ------------------------------------------------------------------
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE
     )
+    print(f"\n[*] Split: {len(X_train)} train / {len(X_test)} test")
 
-    print(f"\n📊 Split: {len(X_train)} train / {len(X_test)} test")
-
-    # ------------------------------------------------------------------
-    # 6. HYPERPARAMETER SEARCH
-    # ------------------------------------------------------------------
-    print(f"\n🔍 RandomizedSearchCV: {N_ITER} iterations × {CV_FOLDS}-fold CV")
-
+    print(f"\n[*] RandomizedSearchCV: {N_ITER} iterations x {CV_FOLDS}-fold CV")
     search = RandomizedSearchCV(
         pipeline,
         param_distributions=PARAM_DIST,
@@ -126,23 +105,16 @@ def train():
         random_state=RANDOM_STATE,
         verbose=0,
     )
-
     search.fit(X_train, y_train)
     best_model = search.best_estimator_
-
     print(f"   Best params: {search.best_params_}")
 
-    # ------------------------------------------------------------------
-    # 7. EVALUATE ON HELD-OUT TEST SET
-    #    FIX: Original never computed or saved any metrics.
-    # ------------------------------------------------------------------
     y_pred = best_model.predict(X_test)
 
     r2 = r2_score(y_test, y_pred)
     rmse = float(np.sqrt(mean_squared_error(y_test, y_pred)))
     mae = float(mean_absolute_error(y_test, y_pred))
 
-    # Also compute metrics in real dollar space (inverse log transform)
     y_test_real = np.expm1(y_test)
     y_pred_real = np.expm1(y_pred)
     rmse_dollars = float(np.sqrt(mean_squared_error(y_test_real, y_pred_real)))
@@ -150,23 +122,19 @@ def train():
 
     elapsed = time.time() - start_time
 
-    print(f"\n{'─' * 40}")
-    print(f"  📈 TEST SET METRICS (log-scale)")
-    print(f"{'─' * 40}")
+    print(f"\n{'-' * 40}")
+    print(f"  [METRICS] TEST SET METRICS (log-scale)")
+    print(f"{'-' * 40}")
     print(f"  R²   : {r2:.4f}")
     print(f"  RMSE : {rmse:.4f}")
     print(f"  MAE  : {mae:.4f}")
-    print(f"\n  📈 TEST SET METRICS (real dollars)")
-    print(f"{'─' * 40}")
+    print(f"  [METRICS] TEST SET METRICS (real dollars)")
+    print(f"{'-' * 40}")
     print(f"  RMSE : ${rmse_dollars:.2f}")
     print(f"  MAE  : ${mae_dollars:.2f}")
-    print(f"\n  ⏱️  Training time: {elapsed:.1f}s")
+    print(f"  Training time: {elapsed:.1f}s")
 
-    # ------------------------------------------------------------------
-    # 8. SAVE ARTIFACTS
-    # ------------------------------------------------------------------
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-
     joblib.dump(best_model, MODEL_PATH)
     joblib.dump(X.columns.tolist(), COLUMNS_PATH)
 
@@ -181,17 +149,18 @@ def train():
         "n_test_rows": len(X_test),
         "best_params": search.best_params_,
         "training_time_seconds": round(elapsed, 1),
-        "leakage_columns_removed": True,
+        "leakage_columns_removed": SALES_EXTRA_LEAKY,
         "random_state": RANDOM_STATE,
+        "note": "Leakage-free: product_price and order_item_quantity removed",
     }
 
     with open(METRICS_PATH, "w") as f:
         json.dump(metrics, f, indent=2, default=str)
 
-    print(f"\n✅ Artifacts saved:")
-    print(f"   Model    → {MODEL_PATH}")
-    print(f"   Columns  → {COLUMNS_PATH}")
-    print(f"   Metrics  → {METRICS_PATH}")
+    print(f"\n[OK] Artifacts saved:")
+    print(f"   Model    -> {MODEL_PATH}")
+    print(f"   Columns  -> {COLUMNS_PATH}")
+    print(f"   Metrics  -> {METRICS_PATH}")
     print(f"\n{'=' * 60}")
 
     return best_model, metrics
