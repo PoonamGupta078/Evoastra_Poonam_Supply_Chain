@@ -1,6 +1,6 @@
 app:
   name: Supply Chain Sales Prediction API
-  version: "1.0.0"
+  version: "2.0.0"
   description: FastAPI inference service for XGBoost supply chain sales prediction
   team: Team C
   organization: Evoastra Ventures (OPC) Pvt Ltd
@@ -13,32 +13,28 @@ server:
   reload: false
 
 model:
-  path: models/best_model.pkl
+  path: artifacts/model.pkl
   type: XGBoostRegressor
-  version: "1.0.0"
+  version: "2.0.0"
   target: sales
   transform: log_scale
   inverse_transform: expm1
 
 artifacts:
   columns_path: artifacts/columns.pkl
-  preprocessor_path: artifacts/preprocessor.pkl
+  metrics_path: artifacts/metrics.json
 
+# FIX: Updated features list to match what the model ACTUALLY uses
+# Removed fake features: lag_1, rolling_mean, order_day, order_week, order_month, weekday, is_weekend
 features:
   numerical:
-    - days_for_shipping_real
-    - days_for_shipment_scheduled
+    - days_for_shipping_(real)
+    - days_for_shipment_(scheduled)
     - order_item_quantity
     - product_price
     - delivery_days
-    - lag_1
-    - rolling_mean
-    - order_day
-    - order_week
-    - order_month
-    - weekday
-    - is_weekend
   categorical:
+    - type
     - shipping_mode
     - order_status
     - market
@@ -60,21 +56,6 @@ endpoints:
     path: /health
     method: GET
     description: Health check endpoint
-  shap:
-    path: /explain
-    method: POST
-    description: Return SHAP explanation for a single prediction
-
-mlflow:
-  tracking_uri: http://mlflow:5000
-  experiment_name: supply_chain_sales_prediction
-  model_registry_name: best_xgb_model
-
-monitoring:
-  enable_drift_detection: true
-  drift_tool: evidently
-  reference_data_path: data/processed/reference.csv
-  alert_threshold: 0.1
 
 cors:
   allow_origins:

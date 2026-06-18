@@ -3,36 +3,27 @@ version: "3.9"
 services:
   supply_chain_api:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: deployment/Dockerfile
     container_name: supply_chain_api
     ports:
       - "8000:8000"
     volumes:
-      - ./models:/app/models
-      - ./data:/app/data
-      - ./artifacts:/app/artifacts
+      - ../data:/app/data
+      - ../artifacts:/app/artifacts
+      # FIX: Removed the non-existent ./models volume mapping
     environment:
-      - MODEL_PATH=/app/models/best_model.pkl
+      # FIX: Corrected MODEL_PATH to point to artifacts
+      - MODEL_PATH=/app/artifacts/model.pkl
       - COLUMNS_PATH=/app/artifacts/columns.pkl
-      - PREPROCESSOR_PATH=/app/artifacts/preprocessor.pkl
       - LOG_LEVEL=info
     restart: unless-stopped
     healthcheck:
+      # FIX: Health endpoint is now correctly implemented in src/app.py
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
-    container_name: mlflow_server
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./mlruns:/mlruns
-    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri /mlruns
-    restart: unless-stopped
-
-volumes:
-  mlruns:
+# FIX: Removed mlflow service from here.
+# It was aspirational and causing confusion since there's no actual MLflow integration in train.py.

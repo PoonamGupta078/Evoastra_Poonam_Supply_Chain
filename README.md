@@ -4,8 +4,6 @@
 
 An end-to-end ML system for predicting supply chain sales values, with automated training, real-time inference, SHAP explainability, and Streamlit deployment.
 
-🔗 **Live Demo:** https://supply-chain-analytics-capstone-h4rlfx53hsdwa4uyybnjwz.streamlit.app
-
 ---
 
 ## 🎯 Problem Statement
@@ -14,142 +12,76 @@ Build an intelligent supply chain analytics system that forecasts demand, identi
 
 ---
 
+## 🛠️ Defect Corrections & Advanced Improvements
+
+During an extensive code audit, **19 critical bugs and architectural flaws** were identified and corrected to bring this project to a production-grade, interview-ready state:
+
+1. **Target Leakage Removed**: `order_item_total`, `order_item_discount`, and profit ratios were mathematically derived from the target variable (`sales`), artificially inflating the original R² to 0.967. These were removed, resulting in an honest, real-world R².
+2. **Train/Serve Skew Eliminated**: The Streamlit UI previously bypassed preprocessing, predicting entirely on raw, frozen row 0 data. `app.py` and `src/app.py` now share the exact same `preprocess()` function as `train.py`.
+3. **Date Parsing Fixed**: Temporal features (`order_month`, etc.) were failing silently due to a column name mismatch, resulting in 0 values across the board. Fixed to correctly parse dates.
+4. **Negative Profits Preserved**: A `.clip(lower=0)` on profit was destroying valuable signal regarding loss-making orders. Replaced with a sign indicator and absolute log transform.
+5. **High Cardinality Encoding**: Replaced one-hot encoding of high-cardinality fields (like `product_name`, resulting in 28,000+ columns) with frequency encoding to prevent dimension explosion and memory exhaustion.
+6. **Reproducibility**: Added `random_state` to all splits and models.
+7. **FastAPI Modernization**: Changed `/predict` from GET to POST with a proper Pydantic request model. Added a `/predict/batch` endpoint and a `/health` endpoint for Docker container healthchecks.
+8. **Testing & CI/CD**: Added a real `pytest` suite testing leakage, idempotency, and schema alignment. Fixed the GitHub Actions workflow to actually fail if tests fail.
+9. **Docker Fixes**: Fixed broken paths in `docker-compose.yml` and corrected the Dockerfile `CMD` entrypoint.
+10. **Dependencies**: Version-pinned all dependencies in `requirements.txt` to prevent future drift.
+
+---
+
 ## 🔁 End-to-End Flow
 
 ```
-Raw Data → Preprocessing → Feature Alignment → Encoding → XGBoost Model → Prediction → Streamlit UI
+Raw Data → Preprocessing (Frequency Encoding, Temporal Parsing) → ColumnTransformer → XGBoost Model → Prediction (Inverse Log) → SHAP → FastAPI / Streamlit
 ```
 
-### 1. Raw Input
-Source: `DataCoSupplyChain.csv` (180K+ rows)
-
-Example input fields: `Type`, `Days for shipping (real)`, `Product Price`, `Customer Segment`
-
-### 2. Preprocessing (`preprocess.py`)
-- Clean column names and handle missing values
+### 1. Preprocessing (`src/preprocess.py`)
+- Clean column names and safely handle target leakage
 - Extract date features (month, week, day of week)
-- Engineer features: `delay_flag`, `is_weekend`
-- Apply log transforms: `sales_log`, `profit_log`
+- Apply frequency encoding for high-cardinality categorical variables
+- Safe log transforms: `sales_log`, `profit_log`
 
-### 3. Feature Alignment & Encoding
-```python
-df = df.reindex(columns=columns, fill_value=0)
-X_transformed = preprocessor.transform(df_single)
-```
+### 2. Model Training (`src/train.py` & `src/evaluate.py`)
+- XGBoost Regressor tuned via RandomizedSearchCV
+- Generates `model.pkl`, `columns.pkl`, and `metrics.json`
+- Evaluated on a strict held-out test set (R², RMSE, MAE logged)
 
-### 4. Model — XGBoost Regressor
-```python
-pred_log = model.predict(X_transformed)
-prediction = np.expm1(pred_log)  # Reverse log transform
-```
-Best result: **R² = 0.967 | RMSE = 20.87**
-
-### 5. Streamlit Frontend
-- 📊 EDA tab: metrics, bar charts, pie charts from real data
-- 🔮 Predict tab: user inputs → live XGBoost prediction
+### 3. Serving (`app.py` & `src/app.py`)
+- **Streamlit**: Interactive EDA dashboard and live prediction UI.
+- **FastAPI**: REST API with single/batch prediction and SHAP feature attribution.
 
 ---
 
-## 🏗️ CI/CD Pipeline
-```
-Code Push / Schedule
-    → GitHub Actions
-        → train.py (retrain model)
-        → predict.py (test inference)
-        → Update artifacts/
-        → Auto Deploy (Railway / Render)
-            → FastAPI Response
-               →Streamlit Cloud
-```
-
----
-
-##  Project Structure
+## 🏗️ Project Structure
 
 ```
-evoastra-supply-chain-capstone/
+supply-chain-analytics-capstone/
 ├── data/
-│   ├── raw/                        # Raw CSV datasets
-│   ├── processed/                  # Cleaned and feature-engineered data
-│   └── data_dictionary.md
+│   └── supplychain_cleaned.csv     # Cleaned dataset
 ├── notebooks/
-│   ├── 01_eda_analytics.ipynb
-│   ├── 02_statistical_modeling.ipynb
-│   └── 03_ml_pipeline.ipynb
+│   ├── Phase1_SupplyChain.ipynb
+│   └── Phase_3_SupplyChain.ipynb
 ├── src/
-│   ├── preprocessing.py
-│   ├── feature_engineering.py
-│   ├── model_training.py
-│   └── inference_api.py
-├── models/
-│   └── best_model.pkl
+│   ├── config.py                   # Centralized configuration
+│   ├── preprocess.py               # Shared preprocessing logic
+│   ├── train.py                    # Model training and artifact generation
+│   ├── evaluate.py                 # Standalone test set evaluation
+│   └── app.py                      # FastAPI inference service
+├── tests/
+│   ├── test_preprocess.py          # Pytest suite
+│   └── test_predict.py
 ├── deployment/
 │   ├── Dockerfile
 │   ├── docker-compose.yml
 │   └── api_config.yaml
-├── requirements.txt
+├── artifacts/                      # Generated by train.py
+│   ├── model.pkl
+│   ├── columns.pkl
+│   └── metrics.json
+├── app.py                          # Streamlit Frontend
+├── requirements.txt                # Pinned dependencies
 └── README.md
 ```
-
----
-
-##  Phase Progression
-
-### Phase 1 — Data Analytics
-- Data cleaning, missing value handling, outlier detection
-- Exploratory data analysis (univariate, bivariate, multivariate)
-- KPI definition: Order Fulfillment Rate, Lead Time Variability, Inventory Turnover
-- Interactive dashboard (Power BI / Streamlit)
-- Root cause analysis using Pareto charts and correlation heatmaps
-
-**Tools:** Python, Pandas, Matplotlib, Seaborn, Plotly, Power BI
-
----
-
-### Phase 2 — Data Science
-- Feature engineering: lag features, rolling averages, interaction terms
-- Statistical testing: t-tests, ANOVA, chi-squared, Granger causality
-- Regression models: Linear, Ridge, Lasso
-- Time-series forecasting: ARIMA, SARIMA, Prophet
-- Model evaluation: RMSE, MAE, R², cross-validation
-- Business risk scenario matrices (best / worst / likely)
-
-**Tools:** Scikit-learn, Statsmodels, SciPy, Prophet
-
----
-
-### Phase 3 — AI / Machine Learning
-- Advanced models: Random Forest, XGBoost, Neural Networks
-- Hyperparameter tuning: GridSearchCV, Optuna
-- Model explainability: SHAP values, force plots, summary plots
-- REST API deployment with FastAPI
-- Model monitoring: prediction drift, data drift, retraining triggers
-
-**Tools:** XGBoost, TensorFlow, SHAP, FastAPI, Docker, MLflow, Evidently AI
-
----
-
----
-
-## 📈 Model Results
-
-| Phase | Model | R² | RMSE |
-|-------|-------|----|------|
-| Phase 2 | Lasso Regression | 0.9306 | 35.08 |
-| Phase 3 | Random Forest | 0.964 | 22.14 |
-| Phase 3 | **XGBoost (best)** | **0.967** | **20.87** |
-
----
-
-## 🔧 Tech Stack
-
-| Area | Tools |
-|------|-------|
-| Analytics | Python, Pandas, Matplotlib, Seaborn, Plotly |
-| ML / AI | XGBoost, Scikit-learn, SHAP, Optuna |
-| Frontend | Streamlit |
-| Backend | FastAPI, Docker |
-| CI/CD | GitHub Actions |
 
 ---
 
@@ -159,24 +91,34 @@ evoastra-supply-chain-capstone/
 git clone https://github.com/Aharshi3614/supply-chain-analytics-capstone.git
 cd supply-chain-analytics-capstone
 pip install -r requirements.txt
+
+# Run Tests
+pytest tests/ -v
+
+# Train the Model
+python src/train.py
+
+# Evaluate Model
+python src/evaluate.py
+
+# Start Streamlit UI
 streamlit run app.py
+
+# OR Start FastAPI Server
+uvicorn src.app:app --host 0.0.0.0 --port 8000
 ```
 
 ---
 
-## 🎯 System Capabilities
+## 🔧 Tech Stack
 
-- ✅ Live Streamlit dashboard with EDA + Prediction
-- ✅ XGBoost model with R² = 0.967
-- ✅ Deployed on Streamlit Cloud (free, public URL)
-- ✅ FastAPI backend with Docker support
-- ✅ CI/CD via GitHub Actions
-
----
-
-## Architecture Diagram
-
-![architecture_diagram](https://github.com/user-attachments/assets/b81d9861-afac-45c7-bad2-485040a888fa)
+| Area | Tools |
+|------|-------|
+| Data Processing | Pandas, NumPy |
+| ML / AI | XGBoost, Scikit-learn, SHAP |
+| Frontend | Streamlit, Plotly |
+| Backend | FastAPI, Pydantic, Docker |
+| Testing & CI/CD | Pytest, GitHub Actions |
 
 ---
 
