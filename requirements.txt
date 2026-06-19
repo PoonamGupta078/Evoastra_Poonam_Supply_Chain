@@ -1,7 +1,24 @@
+# ---------------------------------------------------------------------------
+# WARNING: The scikit-learn and xgboost versions are strictly pinned below.
+# Pickled model artifacts (artifacts/model.pkl, artifacts/classifier_model.pkl, 
+# and artifacts/frequency_maps.pkl) are serialized using these specific versions.
+# Changing these versions will cause deserialization crashes (e.g. AttributeError)
+# at startup in both the Streamlit app and the FastAPI service.
+# ---------------------------------------------------------------------------
+scikit-learn==1.5.2
+xgboost==2.1.3
+
+# Core App Stack
 streamlit==1.40.1
 pandas==2.2.3
 numpy==1.26.4
-scikit-learn==1.5.2
-xgboost==2.1.3
 plotly==5.24.1
 shap==0.46.0
+
+# FastAPI Production Serving Stack
+fastapi==0.115.8
+uvicorn[standard]==0.34.0
+pydantic==2.10.6
+
+# Testing Framework
+pytest==9.1.0

@@ -16,6 +16,7 @@ services:
       # FIX: Corrected MODEL_PATH to point to artifacts
       - MODEL_PATH=/app/artifacts/model.pkl
       - COLUMNS_PATH=/app/artifacts/columns.pkl
+      - FREQUENCY_MAPS_PATH=/app/artifacts/frequency_maps.pkl
       - LOG_LEVEL=info
     restart: unless-stopped
     healthcheck:

@@ -316,7 +316,8 @@ with tab2:
                     X_transformed = preprocessor_step.transform(df_shap).astype(float)
 
                     explainer = shap.TreeExplainer(xgb_step)
-                    shap_vals = explainer.shap_values(X_transformed)
+                    shap_explanation = explainer(X_transformed)
+                    shap_vals = shap_explanation.values
 
                     fig_shap, ax_shap = plt.subplots(figsize=(8, 4))
                     feat_names = preprocessor_step.get_feature_names_out()
@@ -518,7 +519,8 @@ with tab3:
 
                     X_transformed = preprocessor_step.transform(df_shap).astype(float)
                     explainer = shap.TreeExplainer(xgb_step)
-                    shap_vals = explainer.shap_values(X_transformed)
+                    shap_explanation = explainer(X_transformed)
+                    shap_vals = shap_explanation.values
 
                     fig_shap, _ = plt.subplots(figsize=(8, 4))
                     feat_names = preprocessor_step.get_feature_names_out()

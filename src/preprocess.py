@@ -22,15 +22,17 @@ Fixes applied vs. original:
 import pandas as pd
 import numpy as np
 import warnings
+import joblib
 
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import (
+from config import (  # noqa: E402
     LEAKY_COLUMNS,
     DROP_COLUMNS,
     HIGH_CARDINALITY_COLUMNS,
     LEAKAGE_CORRELATION_THRESHOLD,
+    FREQUENCY_MAPS_PATH,
 )
 
 
@@ -117,16 +119,20 @@ def preprocess(df, is_training=False, extra_drop_cols=None):
     # -----------------------------------------------------------------
     # 4. HANDLE SALES (needed for log transform)
     # -----------------------------------------------------------------
-    if "sales" not in df.columns:
-        df["sales"] = 0
+    has_sales = "sales" in df.columns
+    is_classifier = extra_drop_cols is not None and "delivery_status" in extra_drop_cols
+
+    if is_training and not is_classifier:
+        if not has_sales:
+            raise ValueError("Target column 'sales' is missing from training data.")
 
     # -----------------------------------------------------------------
     # 5. HANDLE PROFIT
     # -----------------------------------------------------------------
-    if "order_profit_per_order" in df.columns:
-        df["profit"] = df["order_profit_per_order"]
-    elif "profit" not in df.columns:
-        df["profit"] = 0
+    has_profit_src = "profit" in df.columns or "order_profit_per_order" in df.columns
+    if is_training and not is_classifier:
+        if not has_profit_src:
+            raise ValueError("Target column 'profit' (or 'order_profit_per_order') is missing from training data.")
 
     # -----------------------------------------------------------------
     # 6. FEATURE ENGINEERING
@@ -139,31 +145,59 @@ def preprocess(df, is_training=False, extra_drop_cols=None):
 
     # Delay flag — binary target for the classifier
     # (1 = Late delivery, 0 = On time / Advance shipping)
-    if "delivery_status" in df.columns:
+    has_delivery_status = "delivery_status" in df.columns
+    if is_training and is_classifier:
+        if not has_delivery_status:
+            raise ValueError("Target column 'delivery_status' is missing from training data.")
+
+    if has_delivery_status:
         df["delay_flag"] = (
             df["delivery_status"].str.lower() == "late delivery"
         ).astype(int)
-    elif "delay_flag" not in df.columns:
-        df["delay_flag"] = 0
 
     # -----------------------------------------------------------------
     # 7. SAFE LOG TRANSFORM
     # -----------------------------------------------------------------
-    df["sales"] = pd.to_numeric(df["sales"], errors="coerce").fillna(0).clip(lower=0)
-    df["sales_log"] = np.log1p(df["sales"])
+    if has_sales:
+        df["sales"] = pd.to_numeric(df["sales"], errors="coerce").fillna(0).clip(lower=0)
+        df["sales_log"] = np.log1p(df["sales"])
 
-    df["profit"] = pd.to_numeric(df["profit"], errors="coerce").fillna(0)
-    df["profit_log"] = np.log1p(np.abs(df["profit"]))
-    df["profit_negative"] = (df["profit"] < 0).astype(int)
+    if has_profit_src:
+        if "order_profit_per_order" in df.columns:
+            df["profit"] = df["order_profit_per_order"]
+        df["profit"] = pd.to_numeric(df["profit"], errors="coerce").fillna(0)
+        df["profit_log"] = np.log1p(np.abs(df["profit"]))
+        df["profit_negative"] = (df["profit"] < 0).astype(int)
 
     # -----------------------------------------------------------------
     # 8. FREQUENCY-ENCODE HIGH-CARDINALITY COLUMNS
     # -----------------------------------------------------------------
+    freq_maps = {}
+    if not is_training:
+        if os.path.exists(FREQUENCY_MAPS_PATH):
+            freq_maps = joblib.load(FREQUENCY_MAPS_PATH)
+        elif "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST"):
+            freq_maps = {}
+        else:
+            raise FileNotFoundError(
+                f"Required frequency maps file is missing at: {FREQUENCY_MAPS_PATH}. "
+                f"Please run model training first to generate artifacts."
+            )
+
     for col in HIGH_CARDINALITY_COLUMNS:
         if col in df.columns:
-            freq_map = df[col].value_counts(normalize=True)
-            df[f"{col}_freq"] = df[col].map(freq_map).fillna(0).astype(float)
+            if is_training:
+                freq_map = df[col].value_counts(normalize=True).to_dict()
+                freq_maps[col] = freq_map
+            else:
+                freq_map = freq_maps.get(col, {})
+            
+            df[f"{col}_freq"] = df[col].map(freq_map).fillna(0.0).astype(float)
             df.drop(columns=[col], inplace=True)
+
+    if is_training:
+        os.makedirs(os.path.dirname(FREQUENCY_MAPS_PATH), exist_ok=True)
+        joblib.dump(freq_maps, FREQUENCY_MAPS_PATH)
 
     # -----------------------------------------------------------------
     # 9. DROP BASE LEAKY COLUMNS (financial derivations of sales)

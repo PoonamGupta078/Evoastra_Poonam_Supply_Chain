@@ -27,8 +27,8 @@ from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 from xgboost import XGBRegressor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from preprocess import preprocess
-from config import (
+from preprocess import preprocess  # noqa: E402
+from config import (  # noqa: E402
     DATA_PATH,
     MODEL_PATH,
     COLUMNS_PATH,
@@ -86,7 +86,7 @@ def train():
         ]
     )
 
-    xgb = XGBRegressor(random_state=RANDOM_STATE, verbosity=0)
+    xgb = XGBRegressor(random_state=RANDOM_STATE, verbosity=0, device="cpu")
     pipeline = Pipeline([("preprocessor", preprocessor), ("model", xgb)])
 
     X_train, X_test, y_train, y_test = train_test_split(
@@ -123,12 +123,12 @@ def train():
     elapsed = time.time() - start_time
 
     print(f"\n{'-' * 40}")
-    print(f"  [METRICS] TEST SET METRICS (log-scale)")
+    print("  [METRICS] TEST SET METRICS (log-scale)")
     print(f"{'-' * 40}")
     print(f"  R²   : {r2:.4f}")
     print(f"  RMSE : {rmse:.4f}")
     print(f"  MAE  : {mae:.4f}")
-    print(f"  [METRICS] TEST SET METRICS (real dollars)")
+    print("  [METRICS] TEST SET METRICS (real dollars)")
     print(f"{'-' * 40}")
     print(f"  RMSE : ${rmse_dollars:.2f}")
     print(f"  MAE  : ${mae_dollars:.2f}")
@@ -157,7 +157,7 @@ def train():
     with open(METRICS_PATH, "w") as f:
         json.dump(metrics, f, indent=2, default=str)
 
-    print(f"\n[OK] Artifacts saved:")
+    print("\n[OK] Artifacts saved:")
     print(f"   Model    -> {MODEL_PATH}")
     print(f"   Columns  -> {COLUMNS_PATH}")
     print(f"   Metrics  -> {METRICS_PATH}")

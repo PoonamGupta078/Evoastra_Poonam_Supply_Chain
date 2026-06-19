@@ -1,12 +1,11 @@
 import sys
 import os
-import pytest
 import pandas as pd
 import numpy as np
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
-from preprocess import predict_dataframe
+from preprocess import predict_dataframe  # noqa: E402
 
 class DummyModel:
     """Mock model to test the predict_dataframe function without loading large files."""

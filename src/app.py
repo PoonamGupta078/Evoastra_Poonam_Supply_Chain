@@ -6,45 +6,52 @@ Endpoints:
   GET  /health   — container health check (for Docker)
   POST /predict  — single prediction with SHAP explanation
   POST /predict/batch — batch predictions
-
-Fixes vs. original:
-  1. /predict changed from GET to POST with Pydantic request model
-  2. Added /health endpoint (docker-compose healthcheck was failing)
-  3. Accepts custom order data instead of always predicting row 0
-  4. Uses shared preprocess() function
 """
 
 import os
 import sys
+from contextlib import asynccontextmanager
 
 import numpy as np
 import pandas as pd
 import joblib
 import shap
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional
 
 # Add src to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from preprocess import preprocess, predict_dataframe
-from config import MODEL_PATH, COLUMNS_PATH
+from preprocess import preprocess, predict_dataframe  # noqa: E402
+from config import MODEL_PATH, COLUMNS_PATH, SALES_EXTRA_LEAKY  # noqa: E402
+
+
+# ── Lifespan Manager (Load Artifacts once at startup) ────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load model and columns
+    try:
+        app.state.model = joblib.load(MODEL_PATH)
+        app.state.columns = joblib.load(COLUMNS_PATH)
+        app.state.preprocessor = app.state.model.named_steps["preprocessor"]
+        app.state.xgb_model = app.state.model.named_steps["model"]
+        app.state.explainer = shap.TreeExplainer(app.state.xgb_model)
+    except Exception as e:
+        print(f"Error loading model artifacts: {e}")
+        app.state.model = None
+        app.state.columns = []
+        app.state.preprocessor = None
+        app.state.xgb_model = None
+        app.state.explainer = None
+    yield
+
 
 # ── App Setup ────────────────────────────────────────────────────────
 app = FastAPI(
     title="Supply Chain Sales Prediction API",
     description="XGBoost-based sales prediction with SHAP explainability",
     version="2.0.0",
+    lifespan=lifespan,
 )
-
-# ── Load Artifacts (once at startup) ────────────────────────────────
-model = joblib.load(MODEL_PATH)
-columns = joblib.load(COLUMNS_PATH)
-
-# Extract components for SHAP
-preprocessor = model.named_steps["preprocessor"]
-xgb_model = model.named_steps["model"]
-explainer = shap.TreeExplainer(xgb_model)
 
 
 # ── Request / Response Models ────────────────────────────────────────
@@ -117,9 +124,9 @@ def _order_to_dataframe(order: OrderInput) -> pd.DataFrame:
     )
 
 
-def _get_shap_explanation(df_single: pd.DataFrame) -> dict:
+def _get_shap_explanation(df_single: pd.DataFrame, preprocessor, explainer, columns) -> dict:
     """Compute SHAP values for a single preprocessed row."""
-    df_processed = preprocess(df_single)
+    df_processed = preprocess(df_single, extra_drop_cols=SALES_EXTRA_LEAKY)
     df_aligned = df_processed.reindex(columns=columns, fill_value=0)
 
     X_transformed = preprocessor.transform(df_aligned)
@@ -153,13 +160,13 @@ def home():
 def health():
     """
     Health check endpoint for Docker container healthchecks.
-    FIX: This endpoint didn't exist — docker-compose was checking
-    /health but getting 404, marking container as unhealthy.
     """
+    model_loaded = hasattr(app.state, "model") and app.state.model is not None
+    n_features = len(app.state.columns) if hasattr(app.state, "columns") else 0
     return HealthResponse(
         status="healthy",
-        model_loaded=model is not None,
-        n_features=len(columns),
+        model_loaded=model_loaded,
+        n_features=n_features,
     )
 
 
@@ -167,19 +174,20 @@ def health():
 def predict(order: OrderInput):
     """
     Predict sales for a single order.
-
-    FIX: Changed from GET (always predicting row 0) to POST
-    with a proper Pydantic request model that accepts custom
-    order data via JSON body.
     """
+    if not hasattr(app.state, "model") or app.state.model is None:
+        raise HTTPException(status_code=503, detail="Model is not loaded or healthy.")
+
     df_input = _order_to_dataframe(order)
 
     # Use shared prediction function — same preprocessing as training
-    prediction = predict_dataframe(df_input, model, columns)
+    prediction = predict_dataframe(df_input, app.state.model, app.state.columns)
     pred_value = float(prediction[0])
 
     # SHAP explanation
-    top_features = _get_shap_explanation(df_input)
+    top_features = _get_shap_explanation(
+        df_input, app.state.preprocessor, app.state.explainer, app.state.columns
+    )
 
     return PredictionResponse(
         predicted_sales=round(pred_value, 2),
@@ -192,12 +200,14 @@ def predict(order: OrderInput):
 def predict_batch(batch: BatchInput):
     """
     Predict sales for multiple orders at once.
-    New endpoint — matches what api_config.yaml specifies.
     """
+    if not hasattr(app.state, "model") or app.state.model is None:
+        raise HTTPException(status_code=503, detail="Model is not loaded or healthy.")
+
     results = []
     for order in batch.orders:
         df_input = _order_to_dataframe(order)
-        prediction = predict_dataframe(df_input, model, columns)
+        prediction = predict_dataframe(df_input, app.state.model, app.state.columns)
         results.append(
             {
                 "predicted_sales": round(float(prediction[0]), 2),

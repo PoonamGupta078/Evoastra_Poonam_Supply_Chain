@@ -1,13 +1,12 @@
 import sys
 import os
-import pytest
 import pandas as pd
 import numpy as np
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
-from preprocess import preprocess
-from config import LEAKY_COLUMNS, TARGET_COL
+from preprocess import preprocess  # noqa: E402
+from config import LEAKY_COLUMNS  # noqa: E402
 
 def test_preprocess_drops_leaky_columns():
     """Ensure all mathematically derived target-leaky columns are removed."""
@@ -58,13 +57,14 @@ def test_preprocess_date_extraction():
     assert df_cleaned["order_month"].iloc[1] == 6
 
 def test_preprocess_is_idempotent():
-    """Running preprocess twice should not break or change schema."""
+    """Running preprocess twice should not break or change schema/values."""
     df = pd.DataFrame({
-        "sales": [10, 20],
+        "sales": [10.0, 20.0],
+        "profit": [5.0, 10.0],
         "order_date": ["2026-01-01", "2026-01-02"]
     })
     
-    df_first = preprocess(df)
-    df_second = preprocess(df_first)
+    df_first = preprocess(df, is_training=True)
+    df_second = preprocess(df_first, is_training=False)
     
-    assert list(df_first.columns) == list(df_second.columns)
+    pd.testing.assert_frame_equal(df_first, df_second)

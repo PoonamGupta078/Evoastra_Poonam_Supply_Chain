@@ -33,7 +33,6 @@ import os
 import sys
 
 import pandas as pd
-import numpy as np
 import joblib
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.preprocessing import OneHotEncoder
@@ -50,8 +49,8 @@ from sklearn.metrics import (
 from xgboost import XGBClassifier
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from preprocess import preprocess
-from config import (
+from preprocess import preprocess  # noqa: E402
+from config import (  # noqa: E402
     DATA_PATH,
     CLASSIFIER_MODEL_PATH,
     CLASSIFIER_COLUMNS_PATH,
@@ -81,7 +80,7 @@ def train_classifier():
     print(f"   Raw shape: {df.shape}")
 
     # Preprocess with CLASSIFIER-specific leaky column removal
-    df = preprocess(df, is_training=False, extra_drop_cols=CLASSIFIER_EXTRA_DROP)
+    df = preprocess(df, is_training=True, extra_drop_cols=CLASSIFIER_EXTRA_DROP)
     print(f"   After preprocessing: {df.shape}")
 
     if CLASSIFIER_TARGET_COL not in df.columns:
@@ -121,6 +120,7 @@ def train_classifier():
         random_state=RANDOM_STATE,
         verbosity=0,
         eval_metric="logloss",
+        device="cpu",
     )
 
     pipeline = Pipeline([("preprocessor", preprocessor_step), ("model", xgb_clf)])
@@ -159,7 +159,7 @@ def train_classifier():
     elapsed = time.time() - start_time
 
     print(f"\n{'-' * 40}")
-    print(f"  [METRICS] TEST SET METRICS")
+    print("  [METRICS] TEST SET METRICS")
     print(f"{'-' * 40}")
     print(f"  Accuracy  : {accuracy:.4f}")
     print(f"  AUC-ROC   : {auc:.4f}")
@@ -197,7 +197,7 @@ def train_classifier():
     with open(CLASSIFIER_METRICS_PATH, "w") as f:
         json.dump(metrics, f, indent=2, default=str)
 
-    print(f"\n[OK] Artifacts saved:")
+    print("\n[OK] Artifacts saved:")
     print(f"   Model   -> {CLASSIFIER_MODEL_PATH}")
     print(f"   Columns -> {CLASSIFIER_COLUMNS_PATH}")
     print(f"   Metrics -> {CLASSIFIER_METRICS_PATH}")

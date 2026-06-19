@@ -24,6 +24,9 @@ CLASSIFIER_MODEL_PATH = os.path.join(PROJECT_ROOT, "artifacts", "classifier_mode
 CLASSIFIER_COLUMNS_PATH = os.path.join(PROJECT_ROOT, "artifacts", "classifier_columns.pkl")
 CLASSIFIER_METRICS_PATH = os.path.join(PROJECT_ROOT, "artifacts", "classifier_metrics.json")
 
+# Frequency Maps for High-Cardinality Columns
+FREQUENCY_MAPS_PATH = os.getenv("FREQUENCY_MAPS_PATH", os.path.join(PROJECT_ROOT, "artifacts", "frequency_maps.pkl"))
+
 # ---------------------------------------------------------------------------
 # Targets
 # ---------------------------------------------------------------------------
@@ -63,7 +66,7 @@ LEAKY_COLUMNS = [
 # ---------------------------------------------------------------------------
 SALES_EXTRA_LEAKY = [
     "product_price",       # Direct multiplier: sales = price × qty
-    "order_item_quantity", # Direct multiplier: sales = price × qty
+    "order_item_quantity",  # Direct multiplier: sales = price × qty
     "profit_log",          # log(|profit|) where profit = sales − cost ≈ f(sales)
     "profit_negative",     # sign(profit), derived from profit → derived from sales
 ]
