@@ -130,6 +130,8 @@ def _get_shap_explanation(df_single: pd.DataFrame, preprocessor, explainer, colu
     df_aligned = df_processed.reindex(columns=columns, fill_value=0)
 
     X_transformed = preprocessor.transform(df_aligned)
+    if hasattr(X_transformed, "toarray"):
+        X_transformed = X_transformed.toarray()
     shap_values = explainer(X_transformed)
     vals = shap_values.values[0]
 

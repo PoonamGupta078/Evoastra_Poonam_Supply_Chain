@@ -313,7 +313,10 @@ with tab2:
                         if col not in df_shap.columns:
                             df_shap[col] = 0.0
                     df_shap = df_shap[sales_columns]
-                    X_transformed = preprocessor_step.transform(df_shap).astype(float)
+                    X_transformed = preprocessor_step.transform(df_shap)
+                    if hasattr(X_transformed, "toarray"):
+                        X_transformed = X_transformed.toarray()
+                    X_transformed = X_transformed.astype(float)
 
                     explainer = shap.TreeExplainer(xgb_step)
                     shap_explanation = explainer(X_transformed)
@@ -517,7 +520,10 @@ with tab3:
                             df_shap[col] = 0.0
                     df_shap = df_shap[clf_columns]
 
-                    X_transformed = preprocessor_step.transform(df_shap).astype(float)
+                    X_transformed = preprocessor_step.transform(df_shap)
+                    if hasattr(X_transformed, "toarray"):
+                        X_transformed = X_transformed.toarray()
+                    X_transformed = X_transformed.astype(float)
                     explainer = shap.TreeExplainer(xgb_step)
                     shap_explanation = explainer(X_transformed)
                     shap_vals = shap_explanation.values
