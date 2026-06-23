@@ -172,3 +172,16 @@ N_ITER = 15
 # Leakage detection threshold
 # ---------------------------------------------------------------------------
 LEAKAGE_CORRELATION_THRESHOLD = 0.95
+
+# ---------------------------------------------------------------------------
+# Prophet Forecast Model
+# ---------------------------------------------------------------------------
+FORECAST_MODEL_PATH = os.path.join(PROJECT_ROOT, "artifacts", "forecast_model.pkl")
+FORECAST_OUTPUT_PATH = os.path.join(PROJECT_ROOT, "artifacts", "forecast_output.csv")
+FORECAST_METRICS_PATH = os.path.join(PROJECT_ROOT, "artifacts", "forecast_metrics.json")
+
+# ---------------------------------------------------------------------------
+# Data Drift Detection
+# ---------------------------------------------------------------------------
+DRIFT_REPORT_PATH = os.path.join(PROJECT_ROOT, "artifacts", "drift_report.json")
+REFERENCE_DATA_PATH = os.path.join(PROJECT_ROOT, "artifacts", "reference_data.pkl")

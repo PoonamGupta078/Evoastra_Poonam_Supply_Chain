@@ -29,6 +29,8 @@ from config import (
     DATA_PATH,
     MODEL_PATH, COLUMNS_PATH, METRICS_PATH,
     CLASSIFIER_MODEL_PATH, CLASSIFIER_COLUMNS_PATH, CLASSIFIER_METRICS_PATH,
+    FORECAST_MODEL_PATH, FORECAST_OUTPUT_PATH, FORECAST_METRICS_PATH,
+    DRIFT_REPORT_PATH,
 )
 
 # ── Page Config ───────────────────────────────────────────────────────
@@ -109,7 +111,11 @@ m4.metric("Delivery F1 Score",  f"{clf_metrics.get('f1_score', 'N/A')}")
 st.divider()
 
 # ── Tabs ──────────────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["📊 EDA", "💰 Predict Sales", "🚚 Delivery Risk"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "📊 EDA", "💰 Predict Sales", "🚚 Delivery Risk",
+    "📈 Revenue Forecast", "🔮 Forecast Explainability",
+    "💼 Business Insights", "⚙️ Model Monitoring"
+])
 
 
 # =====================================================================
@@ -544,3 +550,196 @@ with tab3:
             st.error(f"Prediction error: {e}")
             import traceback
             st.code(traceback.format_exc())
+
+# =====================================================================
+# TAB 4 — REVENUE FORECAST
+# =====================================================================
+with tab4:
+    st.header("📈 Revenue Forecast")
+    
+    if not os.path.exists(FORECAST_OUTPUT_PATH):
+        st.warning("Run src/forecast.py first to generate the forecast.")
+    else:
+        try:
+            with open(FORECAST_METRICS_PATH) as f:
+                f_metrics = json.load(f)
+            
+            fm1, fm2, fm3 = st.columns(3)
+            fm1.metric("Forecast MAPE", f"{f_metrics.get('mape', 'N/A')}%")
+            fm2.metric("Forecast RMSE", f"${f_metrics.get('rmse', 0):,.2f}")
+            fm3.metric("Horizon", f"{f_metrics.get('forecast_horizon_days', 30)} days")
+            
+            @st.cache_data
+            def load_forecast():
+                return pd.read_csv(FORECAST_OUTPUT_PATH)
+                
+            forecast_df = load_forecast()
+            
+            raw_df = load_data()
+            raw_df["revenue"] = raw_df["product_price"] * raw_df["order_item_quantity"]
+            raw_df["order_date"] = pd.to_datetime(raw_df["order_date"], errors="coerce")
+            historical = raw_df.dropna(subset=["order_date"]).groupby(pd.Grouper(key="order_date", freq="W"))["revenue"].sum().reset_index()
+            historical.columns = ["ds", "y"]
+            
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=historical["ds"], y=historical["y"], mode="lines", name="Historical", line=dict(color="#1f77b4")))
+            fig.add_trace(go.Scatter(x=forecast_df["ds"], y=forecast_df["yhat"], mode="lines", name="Forecast", line=dict(color="#2ca02c", dash="dash")))
+            fig.add_trace(go.Scatter(
+                x=pd.concat([forecast_df["ds"], forecast_df["ds"][::-1]]),
+                y=pd.concat([forecast_df["yhat_upper"], forecast_df["yhat_lower"][::-1]]),
+                fill="toself",
+                fillcolor="rgba(44, 160, 44, 0.2)",
+                line=dict(color="rgba(255,255,255,0)"),
+                hoverinfo="skip",
+                showlegend=True,
+                name="Uncertainty Band"
+            ))
+            st.plotly_chart(fig, use_container_width=True)
+            
+            st.subheader("Next 30 Days Forecast Values")
+            st.dataframe(forecast_df)
+        except Exception as e:
+            st.error(f"Error loading forecast: {e}")
+
+# =====================================================================
+# TAB 5 — FORECAST EXPLAINABILITY
+# =====================================================================
+with tab5:
+    st.header("🔮 Forecast Explainability")
+    st.markdown("""
+    This tab breaks down the **Holt-Winters Exponential Smoothing** forecast into its
+    underlying components — Level, Trend, and Seasonality.
+    """)
+    if not os.path.exists(FORECAST_MODEL_PATH):
+        st.warning("Run `python src/forecast.py` first to generate the forecast model.")
+    else:
+        try:
+            @st.cache_resource
+            def load_ets_model():
+                return joblib.load(FORECAST_MODEL_PATH)
+                
+            ets_model = load_ets_model()
+            fitted_vals = ets_model.fittedvalues
+            level  = ets_model.level
+            slope  = ets_model.slope
+            season = ets_model.season
+
+            with st.expander("📈 Level Component (Smoothed Baseline)", expanded=True):
+                st.markdown("The **level** is the smoothed baseline revenue after removing noise.")
+                fig_level = go.Figure(go.Scatter(x=list(range(len(level))), y=level, mode="lines", line=dict(color="#1f77b4", width=2)))
+                fig_level.update_layout(title="Smoothed Revenue Level Over Time", xaxis_title="Week", yaxis_title="Revenue ($)", template="plotly_dark")
+                st.plotly_chart(fig_level, use_container_width=True)
+
+            if slope is not None:
+                with st.expander("📊 Trend Component", expanded=True):
+                    st.markdown("The **trend** captures the long-run direction of revenue.")
+                    fig_slope = go.Figure(go.Scatter(x=list(range(len(slope))), y=slope, mode="lines", line=dict(color="#ff7f0e", width=2)))
+                    fig_slope.update_layout(title="Revenue Trend (Slope) Over Time", xaxis_title="Week", yaxis_title="Trend ($)", template="plotly_dark")
+                    st.plotly_chart(fig_slope, use_container_width=True)
+
+            if season is not None:
+                with st.expander("🔄 Seasonal Component", expanded=True):
+                    st.markdown("The **seasonal** component captures repeating weekly revenue patterns.")
+                    season_display = season[-52:] if len(season) >= 52 else season
+                    fig_season = go.Figure(go.Bar(x=list(range(1, len(season_display)+1)), y=season_display, marker_color=["#2ca02c" if v >= 0 else "#d62728" for v in season_display]))
+                    fig_season.update_layout(title="Weekly Seasonal Effect (Last 52 Weeks)", xaxis_title="Week in Cycle", yaxis_title="Seasonal Effect ($)", template="plotly_dark")
+                    st.plotly_chart(fig_season, use_container_width=True)
+
+            with st.expander("✅ Fitted vs Actual Revenue", expanded=False):
+                actual_vals = ets_model.model.endog
+                fig_fit = go.Figure()
+                fig_fit.add_trace(go.Scatter(y=actual_vals, mode="lines", name="Actual", line=dict(color="#1f77b4")))
+                fig_fit.add_trace(go.Scatter(y=fitted_vals.values, mode="lines", name="Fitted", line=dict(color="#ff7f0e", dash="dash")))
+                fig_fit.update_layout(title="Fitted vs Actual Weekly Revenue", xaxis_title="Week", yaxis_title="Revenue ($)", template="plotly_dark")
+                st.plotly_chart(fig_fit, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"Error generating forecast components: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+
+# =====================================================================
+# TAB 6 — BUSINESS INSIGHTS
+# =====================================================================
+with tab6:
+    st.header("💼 Business Insights")
+    try:
+        raw_data = load_data()
+        raw_data["revenue"] = raw_data["product_price"] * raw_data["order_item_quantity"]
+        
+        total_rev = raw_data["revenue"].sum()
+        aov = raw_data["revenue"].mean()
+        
+        is_late = raw_data["delivery_status"].str.lower() == "late delivery"
+        late_rate = is_late.mean() * 100
+        
+        is_on_time = raw_data["delivery_status"].str.lower().isin(["shipping on time", "advance shipping"])
+        on_time_rate = is_on_time.mean() * 100
+        
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Total Revenue", f"${total_rev:,.0f}")
+        k2.metric("Average Order Value", f"${aov:,.2f}")
+        k3.metric("Late Delivery Rate", f"{late_rate:.1f}%")
+        k4.metric("On-Time Delivery Rate", f"{on_time_rate:.1f}%")
+        
+        st.divider()
+        
+        raw_data["order_date"] = pd.to_datetime(raw_data["order_date"], errors="coerce")
+        weekly = raw_data.dropna(subset=["order_date"]).groupby(pd.Grouper(key="order_date", freq="W"))["revenue"].sum().reset_index()
+        weekly_12 = weekly.tail(12)
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            fig_trend = px.bar(weekly_12, x="order_date", y="revenue", title="Weekly Revenue Trend (Last 12 Weeks)", color_discrete_sequence=["#1f77b4"])
+            st.plotly_chart(fig_trend, use_container_width=True)
+            
+        with c2:
+            fig_pie = px.pie(raw_data, names="delivery_status", title="Delivery Status Distribution")
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+        fig_market = px.bar(raw_data.groupby("market")["revenue"].mean().reset_index(), x="market", y="revenue", title="Average Order Value by Market", color_discrete_sequence=["#ff7f0e"])
+        st.plotly_chart(fig_market, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Error loading business insights: {e}")
+
+# =====================================================================
+# TAB 7 — MODEL MONITORING
+# =====================================================================
+with tab7:
+    st.header("⚙️ Model Monitoring")
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    col1.metric("Regression R²", str(sales_metrics.get("r2", "N/A")))
+    col2.metric("Classifier AUC", str(clf_metrics.get("auc_roc", "N/A")))
+    
+    if os.path.exists(FORECAST_METRICS_PATH):
+        with open(FORECAST_METRICS_PATH) as f:
+            f_metrics = json.load(f)
+        col3.metric("Forecast MAPE", f"{f_metrics.get('mape', 'N/A')}%")
+    else:
+        col3.metric("Forecast MAPE", "N/A")
+        
+    if os.path.exists(DRIFT_REPORT_PATH):
+        with open(DRIFT_REPORT_PATH) as f:
+            d_report = json.load(f)
+        
+        is_retrain = d_report.get("recommend_retrain", False)
+        col4.metric("Retraining Recommended", "Yes" if is_retrain else "No")
+        
+        if is_retrain:
+            col5.metric("Drift Status", "Major 🔴")
+        else:
+            has_moderate = any(v.get("status") == "moderate" for v in d_report.get("features", {}).values())
+            if has_moderate:
+                col5.metric("Drift Status", "Moderate 🟡")
+            else:
+                col5.metric("Drift Status", "Stable 🟢")
+                
+        with st.expander("Detailed Drift Report"):
+            st.json(d_report)
+    else:
+        col4.metric("Retraining Recommended", "N/A")
+        col5.metric("Drift Status", "N/A")
+        st.info("Train models and run src/drift_detector.py first to see drift metrics.")

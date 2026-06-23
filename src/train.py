@@ -40,7 +40,34 @@ from config import (  # noqa: E402
     CV_FOLDS,
     N_ITER,
     SALES_EXTRA_LEAKY,
+    REFERENCE_DATA_PATH,
 )
+
+
+def validate_data(df: pd.DataFrame) -> None:
+    """Validates data quality before training."""
+    if df.empty:
+        raise ValueError("DataFrame is empty. Cannot train on 0 rows.")
+    
+    null_pct = df.isnull().mean()
+    if (null_pct > 0.05).any():
+        print("WARNING: Some columns have > 5% missing values.")
+        
+    dup_count = df.duplicated().sum()
+    if dup_count > 0:
+        print(f"WARNING: Found {dup_count} duplicate rows in training data.")
+        
+    if "product_price" in df.columns and (df["product_price"] < 0).any():
+        raise ValueError("Found negative product_price in training data.")
+        
+    if "order_item_quantity" in df.columns and (df["order_item_quantity"] < 0).any():
+        raise ValueError("Found negative order_item_quantity in training data.")
+        
+    if "order_date" in df.columns:
+        parsed_dates = pd.to_datetime(df["order_date"], errors="coerce")
+        failed_parse_pct = parsed_dates.isnull().mean()
+        if failed_parse_pct > 0.10:
+            raise ValueError(f"More than 10% of order_date failed to parse ({failed_parse_pct:.1%}).")
 
 
 def train():
@@ -56,7 +83,11 @@ def train():
 
     print(f"\n[*] Loading data from: {DATA_PATH}")
     df = pd.read_csv(DATA_PATH, encoding="latin1")
+    df.columns = df.columns.str.lower().str.replace(" ", "_")
     print(f"   Raw shape: {df.shape}")
+
+    # Validate data before preprocessing
+    validate_data(df)
 
     # Preprocess with SALES-specific leaky column removal
     df = preprocess(df, is_training=True, extra_drop_cols=SALES_EXTRA_LEAKY)
@@ -161,6 +192,11 @@ def train():
     print(f"   Model    -> {MODEL_PATH}")
     print(f"   Columns  -> {COLUMNS_PATH}")
     print(f"   Metrics  -> {METRICS_PATH}")
+    
+    reference_df = X[num_cols]
+    joblib.dump(reference_df, REFERENCE_DATA_PATH)
+    print(f"   Ref Data -> {REFERENCE_DATA_PATH}")
+    
     print(f"\n{'=' * 60}")
 
     return best_model, metrics
