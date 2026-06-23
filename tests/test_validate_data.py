@@ -1,13 +1,12 @@
 import sys
 import os
-import pytest
+import pytest  # noqa: F401
 import pandas as pd
-import numpy as np
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
-from train import validate_data
+from train import validate_data  # noqa: E402
 
 def test_validate_empty_dataframe():
     """Empty dataframe should raise ValueError."""

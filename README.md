@@ -1,125 +1,292 @@
-# 📦 Supply Chain Sales Prediction — MLOps Pipeline
+# 📦 Supply Chain Analytics — Production ML System
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://supply-chain-analytics-capstone-h4rlfx53hsdwa4uyybnjwz.streamlit.app/)
+> **Dual-Model ML Pipeline | XGBoost Regression + Classification | Time-Series Forecasting | SHAP Explainability | Data Drift Monitoring | CI/CD**
 
-An end-to-end ML system for predicting supply chain sales values, with automated training, real-time inference, SHAP explainability, and Streamlit deployment.
-
----
-
-## 🎯 Problem Statement
-
-Build an intelligent supply chain analytics system that forecasts demand, identifies bottleneck risks, optimizes inventory allocation, and supports real-time decision-making — trained on global supply chain datasets exceeding 100K records.
+A production-grade, end-to-end machine learning system for supply chain optimization. This project goes far beyond a typical Kaggle notebook — it implements a fully operational ML pipeline with leakage-free preprocessing, model serving (FastAPI + Streamlit), automated drift detection, and GitHub Actions CI/CD.
 
 ---
 
-## 🛠️ Defect Corrections & Advanced Improvements
-
-During an extensive code audit, **19 critical bugs and architectural flaws** were identified and corrected to bring this project to a production-grade, interview-ready state:
-
-1. **Target Leakage Removed**: `order_item_total`, `order_item_discount`, and profit ratios were mathematically derived from the target variable (`sales`), artificially inflating the original R² to 0.967. These were removed, resulting in an honest, real-world R².
-2. **Train/Serve Skew Eliminated**: The Streamlit UI previously bypassed preprocessing, predicting entirely on raw, frozen row 0 data. `app.py` and `src/app.py` now share the exact same `preprocess()` function as `train.py`.
-3. **Date Parsing Fixed**: Temporal features (`order_month`, etc.) were failing silently due to a column name mismatch, resulting in 0 values across the board. Fixed to correctly parse dates.
-4. **Negative Profits Preserved**: A `.clip(lower=0)` on profit was destroying valuable signal regarding loss-making orders. Replaced with a sign indicator and absolute log transform.
-5. **High Cardinality Encoding**: Replaced one-hot encoding of high-cardinality fields (like `product_name`, resulting in 28,000+ columns) with frequency encoding to prevent dimension explosion and memory exhaustion.
-6. **Reproducibility**: Added `random_state` to all splits and models.
-7. **FastAPI Modernization**: Changed `/predict` from GET to POST with a proper Pydantic request model. Added a `/predict/batch` endpoint and a `/health` endpoint for Docker container healthchecks.
-8. **Testing & CI/CD**: Added a real `pytest` suite testing leakage, idempotency, and schema alignment. Fixed the GitHub Actions workflow to actually fail if tests fail.
-9. **Docker Fixes**: Fixed broken paths in `docker-compose.yml` and corrected the Dockerfile `CMD` entrypoint.
-10. **Dependencies**: Version-pinned all dependencies in `requirements.txt` to prevent future drift.
-
----
-
-## 🔁 End-to-End Flow
+## 🏗️ System Architecture
 
 ```
-Raw Data → Preprocessing (Frequency Encoding, Temporal Parsing) → ColumnTransformer → XGBoost Model → Prediction (Inverse Log) → SHAP → FastAPI / Streamlit
+┌─────────────────────────────────────────────────────────────────────┐
+│                     DATA LAYER                                      │
+│  data/supplychain_cleaned.csv  (41,650 orders × 43 features)        │
+└───────────────────────┬─────────────────────────────────────────────┘
+                        │
+        ┌───────────────┼───────────────────┐
+        ▼               ▼                   ▼
+┌──────────────┐ ┌──────────────┐  ┌──────────────────┐
+│ src/train.py │ │ src/train_   │  │ src/forecast.py  │
+│  XGBoost     │ │ classifier.py│  │  Holt-Winters    │
+│  Regression  │ │  XGBoost     │  │  Exponential     │
+│  (Sales)     │ │  Classifier  │  │  Smoothing       │
+│              │ │  (Delivery)  │  │  (Revenue)       │
+└──────┬───────┘ └──────┬───────┘  └────────┬─────────┘
+       │                │                   │
+       ▼                ▼                   ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                   ARTIFACT LAYER (artifacts/)                       │
+│  model.pkl │ classifier_model.pkl │ forecast_model.pkl │ *.json     │
+└───────────────────────┬─────────────────────────────────────────────┘
+                        │
+        ┌───────────────┼───────────────┐
+        ▼               ▼               ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────────┐
+│   app.py     │ │ src/app.py   │ │ src/drift_       │
+│  Streamlit   │ │  FastAPI     │ │ detector.py      │
+│  Dashboard   │ │  REST API    │ │  PSI Monitoring  │
+│  (7 Tabs)    │ │  (Swagger)   │ │                  │
+└──────────────┘ └──────────────┘ └──────────────────┘
 ```
-
-### 1. Preprocessing (`src/preprocess.py`)
-- Clean column names and safely handle target leakage
-- Extract date features (month, week, day of week)
-- Apply frequency encoding for high-cardinality categorical variables
-- Safe log transforms: `sales_log`, `profit_log`
-
-### 2. Model Training (`src/train.py` & `src/evaluate.py`)
-- XGBoost Regressor tuned via RandomizedSearchCV
-- Generates `model.pkl`, `columns.pkl`, and `metrics.json`
-- Evaluated on a strict held-out test set (R², RMSE, MAE logged)
-
-### 3. Serving (`app.py` & `src/app.py`)
-- **Streamlit**: Interactive EDA dashboard and live prediction UI.
-- **FastAPI**: REST API with single/batch prediction and SHAP feature attribution.
 
 ---
 
-## 🏗️ Project Structure
+## ✨ Key Features
+
+### 🤖 Machine Learning Models
+| Model | Type | Target | Key Metric | Purpose |
+|-------|------|--------|------------|---------|
+| **Sales Predictor** | XGBoost Regressor | `sales_log` | R² = 0.69 | Predict order-level revenue |
+| **Delivery Risk** | XGBoost Classifier | `delay_flag` | AUC-ROC ≈ 0.72 | Predict late delivery probability |
+| **Revenue Forecast** | Holt-Winters ETS | Weekly Revenue | MAPE ≈ 34% | Forecast next 30 days of revenue |
+
+### 🛡️ Data Leakage Prevention
+- **Sales model**: `product_price` and `order_item_quantity` are removed (because `sales = price × qty` is a formula, not ML)
+- **Delivery model**: Post-delivery observations removed (actual shipping days, delivery status)
+- **Automated leakage detector**: Warns if any feature has |correlation| > 0.95 with the target
+
+### 📊 7-Tab Streamlit Dashboard
+1. **📊 EDA** — Interactive Plotly charts, distribution analysis, correlation heatmaps
+2. **💰 Predict Sales** — Enter order features → get revenue prediction with SHAP explanation
+3. **🚚 Delivery Risk** — Enter order features → get late delivery probability with SHAP
+4. **📈 Revenue Forecast** — 30-day Holt-Winters forecast with uncertainty bands
+5. **🔮 Forecast Explainability** — Level/Trend/Seasonal decomposition of the ETS model
+6. **💼 Business Insights** — KPIs: total revenue, AOV, late delivery rate, market breakdown
+7. **⚙️ Model Monitoring** — All model metrics + data drift status in one view
+
+### 🔍 Model Explainability (SHAP)
+- **TreeExplainer** for both XGBoost models
+- Feature importance waterfall charts for every single prediction
+- Handles sparse matrix conversion automatically
+
+### 📡 Data Drift Detection (PSI)
+- Population Stability Index (PSI) computed per feature
+- Thresholds: Stable (< 0.1), Moderate (0.1–0.25), Major (> 0.25)
+- Automatic retraining recommendation when major drift is detected
+
+### 🚀 Production Serving
+- **FastAPI** REST API with Swagger docs (`/docs`)
+- **Lifespan-managed** model loading (loads once at startup via `app.state`)
+- **Docker + Docker Compose** for containerized deployment
+- **GitHub Actions** CI/CD pipeline (lint → test → validate structure)
+
+---
+
+## 📁 Project Structure
 
 ```
-supply-chain-analytics-capstone/
-├── data/
-│   └── supplychain_cleaned.csv     # Cleaned dataset
-├── notebooks/
-│   ├── Phase1_SupplyChain.ipynb
-│   └── Phase_3_SupplyChain.ipynb
+supply-chain-analytics_evoastra/
+├── app.py                      # Streamlit dashboard (7 tabs)
+├── requirements.txt            # Pinned dependencies
+├── retrain.sh                  # One-command full retraining script
+├── README.md
+├── LICENSE
+│
 ├── src/
-│   ├── config.py                   # Centralized configuration
-│   ├── preprocess.py               # Shared preprocessing logic
-│   ├── train.py                    # Model training and artifact generation
-│   ├── evaluate.py                 # Standalone test set evaluation
-│   └── app.py                      # FastAPI inference service
+│   ├── config.py               # Centralized config (paths, features, hyperparameters)
+│   ├── preprocess.py           # Shared preprocessing pipeline (leakage-free)
+│   ├── train.py                # XGBoost Regressor training (sales prediction)
+│   ├── train_classifier.py     # XGBoost Classifier training (delivery risk)
+│   ├── evaluate.py             # Model evaluation with multiple metrics
+│   ├── predict.py              # Inference utilities
+│   ├── forecast.py             # Holt-Winters ETS revenue forecasting
+│   ├── drift_detector.py       # PSI-based data drift monitoring
+│   └── app.py                  # FastAPI REST API service
+│
 ├── tests/
-│   ├── test_preprocess.py          # Pytest suite
-│   └── test_predict.py
+│   ├── test_preprocess.py      # 4 tests: leakage removal, target creation, date extraction, idempotency
+│   ├── test_predict.py         # Schema alignment test
+│   ├── test_forecast.py        # Forecast output column validation
+│   ├── test_drift.py           # 5 tests: PSI computation, drift detection, retrain recommendation
+│   └── test_validate_data.py   # 4 tests: empty data, negative prices/quantities, clean data
+│
+├── artifacts/                  # Serialized models, metrics, and reference data
+│   ├── model.pkl               # Sales XGBoost model
+│   ├── classifier_model.pkl    # Delivery XGBoost model
+│   ├── forecast_model.pkl      # Holt-Winters ETS model
+│   ├── forecast_output.csv     # 30-day forecast values
+│   ├── columns.pkl / classifier_columns.pkl
+│   ├── metrics.json / classifier_metrics.json / forecast_metrics.json
+│   ├── drift_report.json       # PSI drift report
+│   ├── reference_data.pkl      # Reference distribution for drift detection
+│   └── frequency_maps.pkl      # High-cardinality column encodings
+│
+├── data/
+│   └── supplychain_cleaned.csv # 41,650 orders × 43 features
+│
 ├── deployment/
 │   ├── Dockerfile
-│   ├── docker-compose.yml
-│   └── api_config.yaml
-├── artifacts/                      # Generated by train.py
-│   ├── model.pkl
-│   ├── columns.pkl
-│   └── metrics.json
-├── app.py                          # Streamlit Frontend
-├── requirements.txt                # Pinned dependencies
-└── README.md
+│   └── docker-compose.yml
+│
+├── .github/workflows/
+│   └── ci.yml                  # GitHub Actions: lint → test → validate
+│
+├── notebooks/                  # Jupyter exploration notebooks
+├── docs/                       # Additional documentation
+└── dashboard/                  # Dashboard assets
 ```
 
 ---
 
-## 🚀 Run Locally
+## 🚀 Quick Start
 
+### Prerequisites
+- Python 3.10+
+- pip
+
+### 1. Clone & Install
 ```bash
-git clone https://github.com/Aharshi3614/supply-chain-analytics-capstone.git
-cd supply-chain-analytics-capstone
+git clone https://github.com/PoonamGupta078/Evoastra_Poonam_Supply_Chain.git
+cd Evoastra_Poonam_Supply_Chain
 pip install -r requirements.txt
+```
 
-# Run Tests
-pytest tests/ -v
+### 2. Train Models (optional — pre-trained artifacts included)
+```bash
+python src/train.py                # Sales regression
+python src/train_classifier.py     # Delivery classifier
+python src/forecast.py             # Revenue forecast
+python src/drift_detector.py       # Data drift report
+```
 
-# Train the Model
-python src/train.py
-
-# Evaluate Model
-python src/evaluate.py
-
-# Start Streamlit UI
+### 3. Run the Dashboard
+```bash
 streamlit run app.py
+```
+Open **http://localhost:8501** in your browser.
 
-# OR Start FastAPI Server
-uvicorn src.app:app --host 0.0.0.0 --port 8000
+### 4. Run the FastAPI Service (optional)
+```bash
+uvicorn src.app:app --reload
+```
+Open **http://127.0.0.1:8000/docs** for interactive API docs.
+
+### 5. Run Tests
+```bash
+pytest tests/ -v
+```
+
+### 6. Run with Docker (optional)
+```bash
+cd deployment
+docker-compose up --build
 ```
 
 ---
 
-## 🔧 Tech Stack
+## 🧠 Technical Deep-Dive
 
-| Area | Tools |
-|------|-------|
-| Data Processing | Pandas, NumPy |
-| ML / AI | XGBoost, Scikit-learn, SHAP |
-| Frontend | Streamlit, Plotly |
-| Backend | FastAPI, Pydantic, Docker |
-| Testing & CI/CD | Pytest, GitHub Actions |
+### Preprocessing Pipeline (`src/preprocess.py`)
+- **Column normalization**: All column names lowercased, spaces → underscores
+- **Date feature engineering**: Extracts `order_month`, `order_day`, `order_week`, `is_weekend` from order dates
+- **Target engineering**: Creates `sales_log = log1p(sales)` for regression, `delay_flag` for classification
+- **Leakage removal**: Drops 15+ columns that are mathematically derived from the target
+- **High-cardinality encoding**: Frequency encoding for columns with 100+ unique values (product names, cities, zip codes)
+- **Mixed-type pipeline**: `ColumnTransformer` with `StandardScaler` for numeric + `OneHotEncoder` for categorical
+- **Leakage assertion**: Automated correlation check post-preprocessing — raises warning if any feature has |r| > 0.95 with target
+
+### XGBoost Sales Regression (`src/train.py`)
+- **Hyperparameter tuning**: `RandomizedSearchCV` with 15 iterations × 3-fold CV
+- **Search space**: learning_rate ∈ {0.01, 0.05, 0.1}, max_depth ∈ {3, 5, 7}, n_estimators ∈ {100, 200, 300}
+- **Evaluation**: R², RMSE, MAE on both log-scale and real dollar scale
+- **Artifacts**: Saves model, column order, and metrics as `.pkl` / `.json`
+
+### XGBoost Delivery Classifier (`src/train_classifier.py`)
+- **Class imbalance**: `scale_pos_weight` tuned in {1, 2, 3}
+- **Metrics**: Accuracy, Precision, Recall, F1, AUC-ROC, full classification report
+- **Feature set**: Only order-time features (no post-delivery observations)
+
+### Revenue Forecasting (`src/forecast.py`)
+- **Model**: Holt's Double Exponential Smoothing (statsmodels `ExponentialSmoothing`)
+- **Why not Prophet?** Prophet requires CmdStan (C++ compiler) — statsmodels is pure Python, runs everywhere
+- **Data prep**: Weekly aggregation, sparse tail-week trimming (< 50% of median volume)
+- **Holdout**: Last 2 weeks held out for MAPE/RMSE evaluation
+- **Output**: 30-day daily forecast with ±15% confidence bands, saved as CSV
+
+### Data Drift Detection (`src/drift_detector.py`)
+- **Method**: Population Stability Index (PSI) — compares current data distribution to training reference
+- **Thresholds**: PSI < 0.1 (stable), 0.1–0.25 (moderate), > 0.25 (major drift)
+- **Recommendation engine**: Automatically flags when retraining is needed
+- **Coverage**: All numeric features in the training set
+
+### Centralized Configuration (`src/config.py`)
+- **Single source of truth**: All paths, feature lists, leaky columns, hyperparameter grids
+- **188 lines** of documented configuration — no magic strings anywhere in the codebase
+- **Leakage documentation**: Every leaky column has a comment explaining *why* it leaks
 
 ---
 
-© 2026 Evoastra Ventures (OPC) Pvt Ltd. All rights reserved.
+## 🧪 Test Suite
+
+| Test File | Tests | What It Verifies |
+|-----------|-------|-----------------|
+| `test_preprocess.py` | 4 | Leakage removal, target creation, date feature extraction, idempotency |
+| `test_predict.py` | 1 | DataFrame schema alignment for inference |
+| `test_forecast.py` | 1 | Forecast output contains expected columns (ds, yhat, yhat_lower, yhat_upper) |
+| `test_drift.py` | 5 | PSI computation, shifted distributions, retrain recommendation logic |
+| `test_validate_data.py` | 4 | Empty data handling, negative values, clean data validation |
+| **Total** | **15** | — |
+
+---
+
+## 🔄 CI/CD Pipeline
+
+GitHub Actions workflow (`.github/workflows/ci.yml`):
+
+```
+Push to main/dev → Code Linting (flake8) → Run Tests (pytest) → Validate Structure
+```
+
+- **Code Linting**: `flake8` with max-line-length=120 and sensible ignores
+- **Run Tests**: Full pytest suite — pipeline fails if any test fails
+- **Validate Structure**: Checks that required files exist (requirements.txt, README, Dockerfile, etc.)
+
+---
+
+## 📊 Dataset
+
+- **Source**: DataCo Global Supply Chain Dataset
+- **Size**: 41,650 orders × 43 features
+- **Date range**: January 2015 – January 2018
+- **Key columns**: order details, product info, customer demographics, shipping data, delivery status
+
+---
+
+## 🛠️ Tech Stack
+
+| Category | Technology |
+|----------|-----------|
+| **ML Framework** | XGBoost 2.1.3, scikit-learn 1.5.2 |
+| **Time-Series** | statsmodels (Holt-Winters ETS) |
+| **Explainability** | SHAP 0.46.0 |
+| **Dashboard** | Streamlit 1.40.1, Plotly 5.24.1 |
+| **API** | FastAPI 0.115.8, Uvicorn, Pydantic |
+| **Testing** | pytest 9.1.0 |
+| **CI/CD** | GitHub Actions |
+| **Deployment** | Docker, Docker Compose |
+| **Data** | Pandas 2.2.3, NumPy 1.26.4 |
+
+---
+
+## 📜 License
+
+See [LICENSE](./LICENSE) for details.
+
+---
+
+## 👤 Author
+
+**Poonam Gupta** — [GitHub](https://github.com/PoonamGupta078)
+
+Built as part of the Evoastra internship program.

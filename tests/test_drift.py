@@ -6,7 +6,7 @@ import numpy as np
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
-from drift_detector import compute_psi, check_drift, recommend_retrain
+from drift_detector import compute_psi, check_drift, recommend_retrain  # noqa: E402
 
 def test_psi_identical_distributions():
     """Identical distributions should have PSI close to 0."""

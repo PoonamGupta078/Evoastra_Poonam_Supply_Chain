@@ -620,9 +620,9 @@ with tab5:
                 
             ets_model = load_ets_model()
             fitted_vals = ets_model.fittedvalues
-            level  = ets_model.level
-            slope  = ets_model.slope
-            season = ets_model.season
+            level = ets_model.level
+            trend_component = getattr(ets_model, 'trend', None)
+            season = getattr(ets_model, 'season', None)
 
             with st.expander("📈 Level Component (Smoothed Baseline)", expanded=True):
                 st.markdown("The **level** is the smoothed baseline revenue after removing noise.")
@@ -630,11 +630,11 @@ with tab5:
                 fig_level.update_layout(title="Smoothed Revenue Level Over Time", xaxis_title="Week", yaxis_title="Revenue ($)", template="plotly_dark")
                 st.plotly_chart(fig_level, use_container_width=True)
 
-            if slope is not None:
+            if trend_component is not None:
                 with st.expander("📊 Trend Component", expanded=True):
                     st.markdown("The **trend** captures the long-run direction of revenue.")
-                    fig_slope = go.Figure(go.Scatter(x=list(range(len(slope))), y=slope, mode="lines", line=dict(color="#ff7f0e", width=2)))
-                    fig_slope.update_layout(title="Revenue Trend (Slope) Over Time", xaxis_title="Week", yaxis_title="Trend ($)", template="plotly_dark")
+                    fig_slope = go.Figure(go.Scatter(x=list(range(len(trend_component))), y=trend_component, mode="lines", line=dict(color="#ff7f0e", width=2)))
+                    fig_slope.update_layout(title="Revenue Trend Over Time", xaxis_title="Week", yaxis_title="Trend ($)", template="plotly_dark")
                     st.plotly_chart(fig_slope, use_container_width=True)
 
             if season is not None:

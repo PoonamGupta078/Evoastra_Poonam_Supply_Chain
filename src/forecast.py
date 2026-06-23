@@ -65,7 +65,7 @@ def train_forecast() -> None:
     # 2. Train / holdout split (last 2 weeks = test)
     n_test = 2
     train_series = weekly.iloc[:-n_test]
-    test_series  = weekly.iloc[-n_test:]
+    test_series = weekly.iloc[-n_test:]
     print(f"[*] Split: {len(train_series)} weeks train / {len(test_series)} weeks test")
 
     # 3. Fit Holt's Double Exponential Smoothing (trend only)
@@ -116,10 +116,10 @@ def train_forecast() -> None:
     # Simple confidence interval: ±15% band (reasonable for supply-chain revenue)
     ci_pct = 0.15
     output_df = pd.DataFrame({
-        "ds":          future_dates.strftime("%Y-%m-%d"),
-        "yhat":        daily_yhat.round(2),
-        "yhat_lower":  (daily_yhat * (1 - ci_pct)).round(2),
-        "yhat_upper":  (daily_yhat * (1 + ci_pct)).round(2),
+        "ds": future_dates.strftime("%Y-%m-%d"),
+        "yhat": daily_yhat.round(2),
+        "yhat_lower": (daily_yhat * (1 - ci_pct)).round(2),
+        "yhat_upper": (daily_yhat * (1 + ci_pct)).round(2),
     })
 
     # 6. Save artifacts
