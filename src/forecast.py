@@ -62,8 +62,8 @@ def train_forecast() -> None:
     while len(weekly) > 10 and weekly.iloc[-1] < 0.5 * median_vol:
         weekly = weekly.iloc[:-1]
 
-    # 2. Train / holdout split (last 2 weeks = test)
-    n_test = 2
+    # 2. Train / holdout split (last 4 weeks = test)
+    n_test = 4
     train_series = weekly.iloc[:-n_test]
     test_series = weekly.iloc[-n_test:]
     print(f"[*] Split: {len(train_series)} weeks train / {len(test_series)} weeks test")
@@ -89,7 +89,7 @@ def train_forecast() -> None:
     rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
 
     print(f"\n{'-' * 40}")
-    print("  [METRICS] HOLDOUT EVALUATION (2 Weeks)")
+    print("  [METRICS] HOLDOUT EVALUATION (4 Weeks)")
     print(f"{'-' * 40}")
     print(f"  MAPE : {mape:.2f}%")
     print(f"  RMSE : ${rmse:,.2f}")

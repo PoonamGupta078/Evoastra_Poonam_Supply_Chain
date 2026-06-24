@@ -34,3 +34,32 @@ def test_forecast_output_columns(monkeypatch, tmp_path):
     assert "yhat_lower" in df.columns
     assert "yhat_upper" in df.columns
     assert len(df) == 1
+
+def test_forecast_missing_file(monkeypatch, tmp_path):
+    """Test that get_forecast() raises FileNotFoundError if output doesn't exist."""
+    missing_file = tmp_path / "does_not_exist.csv"
+    monkeypatch.setattr("forecast.FORECAST_OUTPUT_PATH", str(missing_file))
+    
+    import pytest
+    with pytest.raises(FileNotFoundError):
+        get_forecast()
+
+def test_forecast_data_types(monkeypatch, tmp_path):
+    """Test that get_forecast() returns correct data types."""
+    import pandas as pd
+
+    mock_df = pd.DataFrame({
+        "ds": ["2026-01-01", "2026-01-02"],
+        "yhat": [100.0, 105.0],
+        "yhat_lower": [90.0, 95.0],
+        "yhat_upper": [110.0, 115.0],
+    })
+
+    mock_csv = tmp_path / "forecast_output.csv"
+    mock_df.to_csv(mock_csv, index=False)
+    monkeypatch.setattr("forecast.FORECAST_OUTPUT_PATH", str(mock_csv))
+
+    df = get_forecast()
+    assert pd.api.types.is_float_dtype(df["yhat"])
+    assert pd.api.types.is_float_dtype(df["yhat_lower"])
+    assert pd.api.types.is_float_dtype(df["yhat_upper"])
