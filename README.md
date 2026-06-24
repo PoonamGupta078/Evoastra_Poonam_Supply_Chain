@@ -49,7 +49,7 @@ A production-grade, end-to-end machine learning system for supply chain optimiza
 |-------|------|--------|------------|---------|
 | **Sales Predictor** | XGBoost Regressor | `sales_log` | R² = 0.69 | Predict order-level revenue |
 | **Delivery Risk** | XGBoost Classifier | `delay_flag` | AUC-ROC ≈ 0.72 | Predict late delivery probability |
-| **Revenue Forecast** | Holt-Winters ETS | Weekly Revenue | MAPE ≈ 34% | Forecast next 30 days of revenue |
+| **Revenue Forecast** | Holt-Winters ETS | Weekly Revenue | MAPE ≈ 23% | Forecast next 30 days of revenue |
 
 ### 🛡️ Data Leakage Prevention
 - **Sales model**: `product_price` and `order_item_quantity` are removed (because `sales = price × qty` is a formula, not ML)
