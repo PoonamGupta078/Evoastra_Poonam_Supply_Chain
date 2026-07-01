@@ -113,8 +113,34 @@ def train_forecast() -> None:
     weekly_forecasts = forecast_weeks.values
     daily_yhat = np.repeat(weekly_forecasts, 7)[:30]  # repeat each week's value across 7 days
 
-    # Simple confidence interval: ±15% band (reasonable for supply-chain revenue)
-    ci_pct = 0.15
+    # --- Statistically grounded confidence interval ---
+    # Derive CI width from the model's in-sample residuals rather than
+    # using an arbitrary fixed percentage.
+    #
+    # Steps:
+    #   1. Compute in-sample fitted values and their residuals.
+    #   2. Convert residuals to percentage errors (relative to actuals).
+    #   3. Derive std dev of those percentage errors (σ_pct).
+    #   4. Apply a Z-score for the desired confidence level (default: 95%).
+    #   5. The resulting ci_pct = Z * σ_pct is data-driven, not a guess.
+    #
+    # This means: if the model is tight (low MAPE), bands will be narrow;
+    # if the model struggles, bands will honestly reflect that uncertainty.
+    z_score = 1.96  # 95% confidence level
+    in_sample_fitted = full_model.fittedvalues
+    in_sample_actuals = weekly.reindex(in_sample_fitted.index)
+    # Avoid division by zero on any zero-revenue weeks
+    nonzero_mask = in_sample_actuals != 0
+    pct_errors = (
+        (in_sample_actuals[nonzero_mask] - in_sample_fitted[nonzero_mask])
+        / in_sample_actuals[nonzero_mask].abs()
+    )
+    sigma_pct = float(pct_errors.std())          # std dev of percentage residuals
+    ci_pct = z_score * sigma_pct                 # e.g. Z=1.96, σ=0.12 → CI = ±23.5%
+    ci_pct = max(ci_pct, 0.05)                   # floor at ±5% for very tight models
+
+    print(f"  CI Band  : ±{ci_pct * 100:.1f}%  (residual-based, 95% confidence, σ_pct={sigma_pct:.3f})")
+
     output_df = pd.DataFrame({
         "ds": future_dates.strftime("%Y-%m-%d"),
         "yhat": daily_yhat.round(2),
@@ -133,6 +159,9 @@ def train_forecast() -> None:
         "n_train_weeks": int(len(train_series)),
         "n_test_weeks": int(n_test),
         "forecast_horizon_days": 30,
+        "ci_pct": round(ci_pct * 100, 2),          # e.g. 23.5 means ±23.5%
+        "ci_confidence_level": 0.95,
+        "ci_sigma_pct": round(sigma_pct * 100, 2),  # raw residual std dev %
         "trained_at": datetime.now(timezone.utc).isoformat(),
     }
     with open(FORECAST_METRICS_PATH, "w") as f:

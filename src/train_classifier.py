@@ -34,7 +34,7 @@ import sys
 
 import pandas as pd
 import joblib
-from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, StratifiedKFold
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -131,12 +131,13 @@ def train_classifier():
     )
     print(f"\n[*] Split: {len(X_train)} train / {len(X_test)} test")
 
-    print(f"\n[*] RandomizedSearchCV: 10 iterations x {CV_FOLDS}-fold CV (scoring: ROC-AUC)")
+    print(f"\n[*] RandomizedSearchCV: 10 iterations x {CV_FOLDS}-fold StratifiedKFold CV (scoring: ROC-AUC)")
+    skf = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE)
     search = RandomizedSearchCV(
         pipeline,
         param_distributions=PARAM_DIST_CLF,
         n_iter=10,
-        cv=CV_FOLDS,
+        cv=skf,
         scoring="roc_auc",
         n_jobs=-1,
         random_state=RANDOM_STATE,
